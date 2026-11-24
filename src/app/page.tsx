@@ -184,6 +184,17 @@ export default function TruthLensApp() {
     return [...sessionRuns, ...dedupedHistorical];
   }, [sessionRuns, historicalRuns, sessionRunIds]);
 
+  function handleClearLatestResults() {
+    setLatestVerifyResults([]);
+    if (typeof window !== "undefined") {
+      try {
+        window.sessionStorage.removeItem(SESSION_RESULTS_KEY);
+      } catch {
+        // Ignore storage errors
+      }
+    }
+  }
+
   function handleRunCompleted(newRuns: VerificationRun[]) {
     if (newRuns.length === 0) return;
     setLatestVerifyResults(newRuns);
@@ -195,6 +206,24 @@ export default function TruthLensApp() {
     ];
     setSessionRuns(updatedSession);
     persistSessionRuns(updatedSession, newRuns);
+    if (!readOnlyProduction) {
+      loadData();
+    }
+  }
+
+  function handleAppendLatestResult(run: VerificationRun) {
+    setLatestVerifyResults((prev) => {
+      const nextLatest = [...prev.filter((r) => r.runId !== run.runId), run];
+      setSessionRuns((prevSess) => {
+        const nextSess = [
+          run,
+          ...prevSess.filter((existing) => existing.runId !== run.runId),
+        ];
+        persistSessionRuns(nextSess, nextLatest);
+        return nextSess;
+      });
+      return nextLatest;
+    });
     if (!readOnlyProduction) {
       loadData();
     }
@@ -315,6 +344,8 @@ export default function TruthLensApp() {
             draft={verifyDraft}
             onDraftChange={setVerifyDraft}
             results={latestVerifyResults}
+            onClearResults={handleClearLatestResults}
+            onAppendResult={handleAppendLatestResult}
             onRunCompleted={handleRunCompleted}
             onInspectRunInWorkflow={handleInspectRunInWorkflow}
           />

@@ -13,6 +13,7 @@ import {
 } from "./llm.ts";
 import { loadPromptTemplate, renderPromptTemplate } from "./prompt-loader.ts";
 import type {
+  InjectionScanResult,
   PromptVersion,
   ReferenceSource,
   StageTrace,
@@ -49,30 +50,32 @@ interface SinglePassResponse {
   }>;
 }
 
-interface UnresolvedClaimEntity {
+export interface UnresolvedClaimEntity {
   entityRef?: string;
   reason?: string;
 }
 
-interface IdentityResolution {
+export interface IdentityResolution {
   entityRef?: string;
   resolution?: string;
   detail?: string;
 }
 
-interface Stage1Response {
-  claims?: Array<{
-    claimId?: string;
-    claimText?: string;
-    originalSpan?: string;
-    claimType?: string;
-    inputForm?: string;
-  }>;
+export interface ExtractedClaimItem {
+  claimId?: string;
+  claimText?: string;
+  originalSpan?: string;
+  claimType?: string;
+  inputForm?: string;
+}
+
+export interface Stage1Response {
+  claims?: ExtractedClaimItem[];
   unresolvedClaimEntities?: UnresolvedClaimEntity[];
   nonFactualNotes?: string;
 }
 
-interface Stage2Response {
+export interface Stage2Response {
   evidenceMap?: Array<{
     claimId?: string;
     evidence?: Array<{
@@ -91,7 +94,7 @@ interface Stage2Response {
   identityResolution?: IdentityResolution[];
 }
 
-interface Stage3Response {
+export interface Stage3Response {
   verifications?: Array<{
     claimId?: string;
     claimText?: string;
@@ -103,7 +106,7 @@ interface Stage3Response {
   }>;
 }
 
-interface Stage4BlindResponse {
+export interface Stage4BlindResponse {
   independentVerifications?: Array<{
     claimId?: string;
     verdict?: string;
@@ -115,7 +118,7 @@ interface Stage4BlindResponse {
   }>;
 }
 
-interface Stage4bAdjudicationResponse {
+export interface Stage4bAdjudicationResponse {
   adjudications?: Array<{
     claimId?: string;
     finalVerdict?: string;
@@ -129,6 +132,21 @@ interface Stage4bAdjudicationResponse {
 interface Stage5Response {
   summary?: string;
   methodologyNote?: string;
+}
+
+export interface V3DisagreementItem {
+  claimId: string;
+  claimText: string | undefined;
+  stage3Position: {
+    verdict: Verdict;
+    explanation: string | undefined;
+    citations: RawCitation[];
+  };
+  stage4Position: {
+    verdict: Verdict;
+    explanation: string | undefined;
+    citations: RawCitation[];
+  };
 }
 
 function computeRunMetrics(
@@ -168,6 +186,27 @@ export type StructuredLlmCaller = <T>(
   temperature: number
 ) => Promise<LlmJsonResponse<T>>;
 
+function makeStageTrace(
+  tpl: { id: string; stage: string },
+  temperature: number,
+  renderedUserPrompt: string,
+  systemPrompt: string,
+  res: LlmJsonResponse<unknown>
+): StageTrace {
+  return {
+    stageId: tpl.id,
+    stageName: tpl.stage,
+    templateId: tpl.id,
+    temperature,
+    systemPrompt,
+    renderedUserPrompt,
+    rawOutput: res.rawText,
+    latencyMs: res.latencyMs,
+    inputTokens: res.inputTokens,
+    outputTokens: res.outputTokens,
+  };
+}
+
 async function runSinglePass(
   version: "V1" | "V2",
   claimInput: string,
@@ -200,18 +239,13 @@ async function runSinglePass(
     template.temperature
   );
 
-  const stageTrace: StageTrace = {
-    stageId: template.id,
-    stageName: template.stage,
-    templateId: template.id,
-    temperature: template.temperature,
-    systemPrompt: template.systemPrompt,
+  const stageTrace = makeStageTrace(
+    template,
+    template.temperature,
     renderedUserPrompt,
-    rawOutput: res.rawText,
-    latencyMs: res.latencyMs,
-    inputTokens: res.inputTokens,
-    outputTokens: res.outputTokens,
-  };
+    template.systemPrompt,
+    res
+  );
 
   const claims: VerifiedClaim[] = (res.data.claims ?? []).map((c, idx) => {
     const verdict = normalizeVerdict(c.verdict);
@@ -238,7 +272,8 @@ async function runSinglePass(
       explanation: c.explanation || "No explanation provided.",
       citations,
       verificationAgreement: "single_pass",
-      ...(verdict === "Insufficient Evidence" && (c.missingInformation || c.requiredEvidence)
+      ...(verdict === "Insufficient Evidence" &&
+      (c.missingInformation || c.requiredEvidence)
         ? {
             missingInformation: c.missingInformation,
             requiredEvidence: c.requiredEvidence,
@@ -255,67 +290,50 @@ async function runSinglePass(
   };
 }
 
-async function runV3MultiStage(
+export async function executeV3Stage1(
   claimInput: string,
-  sources: ReferenceSource[],
-  llmCaller: StructuredLlmCaller,
-  stage4Temperature?: number
+  llmCaller: StructuredLlmCaller = callStructuredJson
 ): Promise<{
-  summary: string;
-  methodologyNote?: string;
-  claims: VerifiedClaim[];
-  stages: StageTrace[];
-  temperatures: Record<string, number>;
+  data: Stage1Response;
+  trace: StageTrace;
+  templateId: string;
+  temperature: number;
 }> {
   const t1 = loadPromptTemplate("V3", "01_claim_extraction.json");
-  const t2 = loadPromptTemplate("V3", "02_evidence_analysis.json");
-  const t3 = loadPromptTemplate("V3", "03_claim_verification.json");
-  const t4 = loadPromptTemplate("V3", "04_independent_verification.json");
-  const t4b = loadPromptTemplate("V3", "04b_disagreement_reviewer.json");
-  const t5 = loadPromptTemplate("V3", "05_report_generation.json");
-
   const safeClaim = sanitizeDelimiterTags(claimInput);
-  const sourcesBlock = formatSourcesBlock(sources);
-  const stages: StageTrace[] = [];
-  const temperatures: Record<string, number> = {};
-
-  // Stage 1: Claim Extraction
   const u1 = renderPromptTemplate(t1.userTemplate, { CLAIM_INPUT: safeClaim });
   const r1 = await llmCaller<Stage1Response>(
     t1.systemPrompt,
     u1,
     t1.temperature
   );
-  temperatures[t1.id] = t1.temperature;
-  stages.push({
-    stageId: t1.id,
-    stageName: t1.stage,
+  return {
+    data: r1.data,
+    trace: makeStageTrace(t1, t1.temperature, u1, t1.systemPrompt, r1),
     templateId: t1.id,
     temperature: t1.temperature,
-    systemPrompt: t1.systemPrompt,
-    renderedUserPrompt: u1,
-    rawOutput: r1.rawText,
-    latencyMs: r1.latencyMs,
-    inputTokens: r1.inputTokens,
-    outputTokens: r1.outputTokens,
-  });
+  };
+}
 
-  const extractedClaims = r1.data.claims ?? [];
-  const unresolvedClaimEntities = r1.data.unresolvedClaimEntities ?? [];
-  if (extractedClaims.length === 0) {
-    return {
-      summary:
-        "No independently verifiable factual claims were extracted from the input.",
-      methodologyNote: r1.data.nonFactualNotes,
-      claims: [],
-      stages,
-      temperatures,
-    };
-  }
-
-  // Stage 2: Evidence Analysis
+export async function executeV3Stage2(
+  extractedClaims: ExtractedClaimItem[],
+  unresolvedClaimEntities: UnresolvedClaimEntity[],
+  sources: ReferenceSource[],
+  llmCaller: StructuredLlmCaller = callStructuredJson
+): Promise<{
+  data: Stage2Response;
+  trace: StageTrace;
+  templateId: string;
+  temperature: number;
+}> {
+  const t2 = loadPromptTemplate("V3", "02_evidence_analysis.json");
   const claimsJson = JSON.stringify(extractedClaims, null, 2);
-  const unresolvedEntitiesJson = JSON.stringify(unresolvedClaimEntities, null, 2);
+  const unresolvedEntitiesJson = JSON.stringify(
+    unresolvedClaimEntities,
+    null,
+    2
+  );
+  const sourcesBlock = formatSourcesBlock(sources);
   const u2 = renderPromptTemplate(t2.userTemplate, {
     CLAIMS_JSON: claimsJson,
     UNRESOLVED_ENTITIES_JSON: unresolvedEntitiesJson,
@@ -326,25 +344,30 @@ async function runV3MultiStage(
     u2,
     t2.temperature
   );
-  temperatures[t2.id] = t2.temperature;
-  stages.push({
-    stageId: t2.id,
-    stageName: t2.stage,
+  return {
+    data: r2.data,
+    trace: makeStageTrace(t2, t2.temperature, u2, t2.systemPrompt, r2),
     templateId: t2.id,
     temperature: t2.temperature,
-    systemPrompt: t2.systemPrompt,
-    renderedUserPrompt: u2,
-    rawOutput: r2.rawText,
-    latencyMs: r2.latencyMs,
-    inputTokens: r2.inputTokens,
-    outputTokens: r2.outputTokens,
-  });
+  };
+}
 
-  // Stage 3: Claim Verification (uses extracted claims + Stage 2 evidence + identityResolution)
+export async function executeV3Stage3(
+  extractedClaims: ExtractedClaimItem[],
+  stage2Data: Stage2Response,
+  llmCaller: StructuredLlmCaller = callStructuredJson
+): Promise<{
+  data: Stage3Response;
+  trace: StageTrace;
+  templateId: string;
+  temperature: number;
+}> {
+  const t3 = loadPromptTemplate("V3", "03_claim_verification.json");
+  const claimsJson = JSON.stringify(extractedClaims, null, 2);
   const evidenceJson = JSON.stringify(
     {
-      evidenceMap: r2.data.evidenceMap ?? [],
-      identityResolution: r2.data.identityResolution ?? [],
+      evidenceMap: stage2Data.evidenceMap ?? [],
+      identityResolution: stage2Data.identityResolution ?? [],
     },
     null,
     2
@@ -358,22 +381,34 @@ async function runV3MultiStage(
     u3,
     t3.temperature
   );
-  temperatures[t3.id] = t3.temperature;
-  stages.push({
-    stageId: t3.id,
-    stageName: t3.stage,
+  return {
+    data: r3.data,
+    trace: makeStageTrace(t3, t3.temperature, u3, t3.systemPrompt, r3),
     templateId: t3.id,
     temperature: t3.temperature,
-    systemPrompt: t3.systemPrompt,
-    renderedUserPrompt: u3,
-    rawOutput: r3.rawText,
-    latencyMs: r3.latencyMs,
-    inputTokens: r3.inputTokens,
-    outputTokens: r3.outputTokens,
-  });
+  };
+}
 
-  // Stage 4: Blind Independent Verification (NO access to Stage 3 verdicts)
-  const s4Temperature = stage4Temperature !== undefined ? stage4Temperature : t4.temperature;
+/**
+ * Stage 4: Blind Independent Verification — strictly receives extracted claims + raw sources ONLY.
+ * Never receives Stage 2 or Stage 3 outputs.
+ */
+export async function executeV3Stage4(
+  extractedClaims: ExtractedClaimItem[],
+  sources: ReferenceSource[],
+  llmCaller: StructuredLlmCaller = callStructuredJson,
+  stage4Temperature?: number
+): Promise<{
+  data: Stage4BlindResponse;
+  trace: StageTrace;
+  templateId: string;
+  temperature: number;
+}> {
+  const t4 = loadPromptTemplate("V3", "04_independent_verification.json");
+  const s4Temperature =
+    stage4Temperature !== undefined ? stage4Temperature : t4.temperature;
+  const claimsJson = JSON.stringify(extractedClaims, null, 2);
+  const sourcesBlock = formatSourcesBlock(sources);
   const u4 = renderPromptTemplate(t4.userTemplate, {
     CLAIMS_JSON: claimsJson,
     SOURCES_INPUT: sourcesBlock,
@@ -383,29 +418,27 @@ async function runV3MultiStage(
     u4,
     s4Temperature
   );
-  temperatures[t4.id] = s4Temperature;
-  stages.push({
-    stageId: t4.id,
-    stageName: t4.stage,
+  return {
+    data: r4.data,
+    trace: makeStageTrace(t4, s4Temperature, u4, t4.systemPrompt, r4),
     templateId: t4.id,
     temperature: s4Temperature,
-    systemPrompt: t4.systemPrompt,
-    renderedUserPrompt: u4,
-    rawOutput: r4.rawText,
-    latencyMs: r4.latencyMs,
-    inputTokens: r4.inputTokens,
-    outputTokens: r4.outputTokens,
-  });
+  };
+}
 
+export function buildV3Disagreements(
+  extractedClaims: ExtractedClaimItem[],
+  stage3Data: Stage3Response,
+  stage4Data: Stage4BlindResponse
+): V3DisagreementItem[] {
   const s3Map = new Map(
-    (r3.data.verifications ?? []).map((v) => [v.claimId, v])
+    (stage3Data.verifications ?? []).map((v) => [v.claimId, v])
   );
   const s4Map = new Map(
-    (r4.data.independentVerifications ?? []).map((v) => [v.claimId, v])
+    (stage4Data.independentVerifications ?? []).map((v) => [v.claimId, v])
   );
 
-  // Identify only the claims where Stage 3 and Stage 4 disagree
-  const disagreements = extractedClaims
+  return extractedClaims
     .map((ec, idx) => {
       const cid = ec.claimId || `C${idx + 1}`;
       const s3 = s3Map.get(cid);
@@ -429,46 +462,57 @@ async function runV3MultiStage(
       };
     })
     .filter((d): d is NonNullable<typeof d> => d !== null);
+}
 
-  // Stage 4b: Separate Reviewer invoked ONLY when Stage 3 and Stage 4 disagree
-  const adjudicationMap = new Map<
-    string,
-    NonNullable<Stage4bAdjudicationResponse["adjudications"]>[number]
-  >();
+export async function executeV3Stage4b(
+  disagreements: V3DisagreementItem[],
+  sources: ReferenceSource[],
+  llmCaller: StructuredLlmCaller = callStructuredJson
+): Promise<{
+  data: Stage4bAdjudicationResponse;
+  trace: StageTrace;
+  templateId: string;
+  temperature: number;
+}> {
+  const t4b = loadPromptTemplate("V3", "04b_disagreement_reviewer.json");
+  const sourcesBlock = formatSourcesBlock(sources);
+  const u4b = renderPromptTemplate(t4b.userTemplate, {
+    DISAGREEMENTS_JSON: JSON.stringify(disagreements, null, 2),
+    SOURCES_INPUT: sourcesBlock,
+  });
+  const r4b = await llmCaller<Stage4bAdjudicationResponse>(
+    t4b.systemPrompt,
+    u4b,
+    t4b.temperature
+  );
+  return {
+    data: r4b.data,
+    trace: makeStageTrace(t4b, t4b.temperature, u4b, t4b.systemPrompt, r4b),
+    templateId: t4b.id,
+    temperature: t4b.temperature,
+  };
+}
 
-  if (disagreements.length > 0) {
-    const u4b = renderPromptTemplate(t4b.userTemplate, {
-      DISAGREEMENTS_JSON: JSON.stringify(disagreements, null, 2),
-      SOURCES_INPUT: sourcesBlock,
-    });
-    const r4b = await llmCaller<Stage4bAdjudicationResponse>(
-      t4b.systemPrompt,
-      u4b,
-      t4b.temperature
-    );
-    temperatures[t4b.id] = t4b.temperature;
-    stages.push({
-      stageId: t4b.id,
-      stageName: t4b.stage,
-      templateId: t4b.id,
-      temperature: t4b.temperature,
-      systemPrompt: t4b.systemPrompt,
-      renderedUserPrompt: u4b,
-      rawOutput: r4b.rawText,
-      latencyMs: r4b.latencyMs,
-      inputTokens: r4b.inputTokens,
-      outputTokens: r4b.outputTokens,
-    });
+export function finalizeV3Claims(
+  extractedClaims: ExtractedClaimItem[],
+  stage3Data: Stage3Response,
+  stage4Data: Stage4BlindResponse,
+  stage4bData: Stage4bAdjudicationResponse | undefined,
+  sources: ReferenceSource[]
+): VerifiedClaim[] {
+  const s3Map = new Map(
+    (stage3Data.verifications ?? []).map((v) => [v.claimId, v])
+  );
+  const s4Map = new Map(
+    (stage4Data.independentVerifications ?? []).map((v) => [v.claimId, v])
+  );
+  const adjudicationMap = new Map(
+    (stage4bData?.adjudications ?? [])
+      .filter((a) => Boolean(a.claimId))
+      .map((a) => [a.claimId!, a])
+  );
 
-    for (const adj of r4b.data.adjudications ?? []) {
-      if (adj.claimId) {
-        adjudicationMap.set(adj.claimId, adj);
-      }
-    }
-  }
-
-  // Build finalized claims with deterministic citation validation and qualitative confidence
-  const claims: VerifiedClaim[] = extractedClaims.map((ec, idx) => {
+  return extractedClaims.map((ec, idx) => {
     const cid = ec.claimId || `C${idx + 1}`;
     const s3 = s3Map.get(cid);
     const s4 = s4Map.get(cid);
@@ -527,17 +571,14 @@ async function runV3MultiStage(
       verificationAgreement,
       stage3Verdict,
       stage4Verdict,
-      // For Insufficient Evidence: propagate missing information from Stage 3 or Stage 4
       ...(finalVerdict === "Insufficient Evidence"
         ? {
-            missingInformation:
-              adj?.finalExplanation
-                ? undefined
-                : s3?.missingInformation || s4?.missingInformation,
-            requiredEvidence:
-              adj?.finalExplanation
-                ? undefined
-                : s3?.requiredEvidence || s4?.requiredEvidence,
+            missingInformation: adj?.finalExplanation
+              ? undefined
+              : s3?.missingInformation || s4?.missingInformation,
+            requiredEvidence: adj?.finalExplanation
+              ? undefined
+              : s3?.requiredEvidence || s4?.requiredEvidence,
           }
         : {}),
       evidenceAlignment: adj
@@ -549,8 +590,30 @@ async function runV3MultiStage(
         : undefined,
     };
   });
+}
 
-  // Stage 5: Report Generation
+export async function executeV3Stage5AndBuildRun(params: {
+  claimInput: string;
+  sources: ReferenceSource[];
+  injectionScan: InjectionScanResult;
+  extractedClaims: ExtractedClaimItem[];
+  stage3Data: Stage3Response;
+  stage4Data: Stage4BlindResponse;
+  stage4bData?: Stage4bAdjudicationResponse;
+  priorTraces: StageTrace[];
+  temperatures: Record<string, number>;
+  llmCaller?: StructuredLlmCaller;
+}): Promise<VerificationRun> {
+  const llmCaller = params.llmCaller ?? callStructuredJson;
+  const claims = finalizeV3Claims(
+    params.extractedClaims,
+    params.stage3Data,
+    params.stage4Data,
+    params.stage4bData,
+    params.sources
+  );
+
+  const t5 = loadPromptTemplate("V3", "05_report_generation.json");
   const u5 = renderPromptTemplate(t5.userTemplate, {
     FINAL_CLAIMS_JSON: JSON.stringify(
       claims.map((c) => ({
@@ -561,8 +624,9 @@ async function runV3MultiStage(
         verificationAgreement: c.verificationAgreement,
         verifiedCitationCount: c.citations.filter((x) => x.verified).length,
         totalCitationCount: c.citations.length,
-        // Pass missingInformation and requiredEvidence for Insufficient Evidence verdicts
-        ...(c.missingInformation ? { missingInformation: c.missingInformation } : {}),
+        ...(c.missingInformation
+          ? { missingInformation: c.missingInformation }
+          : {}),
         ...(c.requiredEvidence ? { requiredEvidence: c.requiredEvidence } : {}),
       })),
       null,
@@ -574,26 +638,135 @@ async function runV3MultiStage(
     u5,
     t5.temperature
   );
-  temperatures[t5.id] = t5.temperature;
-  stages.push({
-    stageId: t5.id,
-    stageName: t5.stage,
-    templateId: t5.id,
-    temperature: t5.temperature,
-    systemPrompt: t5.systemPrompt,
-    renderedUserPrompt: u5,
-    rawOutput: r5.rawText,
-    latencyMs: r5.latencyMs,
-    inputTokens: r5.inputTokens,
-    outputTokens: r5.outputTokens,
-  });
+  const s5Trace = makeStageTrace(t5, t5.temperature, u5, t5.systemPrompt, r5);
+  const stages = [...params.priorTraces, s5Trace];
+  const temperatures = {
+    ...params.temperatures,
+    [t5.id]: t5.temperature,
+  };
+  const metrics = computeRunMetrics(claims, stages);
 
   return {
+    runId: crypto.randomUUID(),
+    createdAt: new Date().toISOString(),
+    version: "V3",
+    modelConfig: {
+      model: getModelName(),
+      temperatures,
+    },
+    claimInput: params.claimInput,
+    sources: params.sources.map((s) => ({
+      id: s.id,
+      title: s.title,
+      type: s.type,
+      charCount: s.charCount,
+    })),
+    injectionScan: params.injectionScan,
     summary: r5.data.summary || "Multi-stage verification complete.",
     methodologyNote: r5.data.methodologyNote,
     claims,
     stages,
+    metrics,
+  };
+}
+
+async function runV3MultiStage(
+  claimInput: string,
+  sources: ReferenceSource[],
+  llmCaller: StructuredLlmCaller,
+  stage4Temperature?: number
+): Promise<{
+  summary: string;
+  methodologyNote?: string;
+  claims: VerifiedClaim[];
+  stages: StageTrace[];
+  temperatures: Record<string, number>;
+}> {
+  const temperatures: Record<string, number> = {};
+
+  // Stage 1: Claim Extraction
+  const s1Res = await executeV3Stage1(claimInput, llmCaller);
+  temperatures[s1Res.templateId] = s1Res.temperature;
+
+  const extractedClaims = s1Res.data.claims ?? [];
+  const unresolvedClaimEntities = s1Res.data.unresolvedClaimEntities ?? [];
+  if (extractedClaims.length === 0) {
+    return {
+      summary:
+        "No independently verifiable factual claims were extracted from the input.",
+      methodologyNote: s1Res.data.nonFactualNotes,
+      claims: [],
+      stages: [s1Res.trace],
+      temperatures,
+    };
+  }
+
+  // Run Stage 2 -> Stage 3 in parallel with Blind Stage 4 (Stage 4 never sees Stage 2 or Stage 3)
+  const [s2AndS3, s4Res] = await Promise.all([
+    (async () => {
+      const s2Res = await executeV3Stage2(
+        extractedClaims,
+        unresolvedClaimEntities,
+        sources,
+        llmCaller
+      );
+      const s3Res = await executeV3Stage3(
+        extractedClaims,
+        s2Res.data,
+        llmCaller
+      );
+      return { s2Res, s3Res };
+    })(),
+    executeV3Stage4(extractedClaims, sources, llmCaller, stage4Temperature),
+  ]);
+
+  const { s2Res, s3Res } = s2AndS3;
+  temperatures[s2Res.templateId] = s2Res.temperature;
+  temperatures[s3Res.templateId] = s3Res.temperature;
+  temperatures[s4Res.templateId] = s4Res.temperature;
+
+  const stages: StageTrace[] = [
+    s1Res.trace,
+    s2Res.trace,
+    s3Res.trace,
+    s4Res.trace,
+  ];
+
+  // Stage 4b: Separate Reviewer invoked ONLY when Stage 3 and Stage 4 disagree
+  const disagreements = buildV3Disagreements(
+    extractedClaims,
+    s3Res.data,
+    s4Res.data
+  );
+  let stage4bData: Stage4bAdjudicationResponse | undefined;
+
+  if (disagreements.length > 0) {
+    const s4bRes = await executeV3Stage4b(disagreements, sources, llmCaller);
+    temperatures[s4bRes.templateId] = s4bRes.temperature;
+    stages.push(s4bRes.trace);
+    stage4bData = s4bRes.data;
+  }
+
+  // Stage 5: Finalize claims + Report Generation
+  const finalizedRun = await executeV3Stage5AndBuildRun({
+    claimInput,
+    sources,
+    injectionScan: { flagged: false, warnings: [] },
+    extractedClaims,
+    stage3Data: s3Res.data,
+    stage4Data: s4Res.data,
+    stage4bData,
+    priorTraces: stages,
     temperatures,
+    llmCaller,
+  });
+
+  return {
+    summary: finalizedRun.summary,
+    methodologyNote: finalizedRun.methodologyNote,
+    claims: finalizedRun.claims,
+    stages: finalizedRun.stages,
+    temperatures: finalizedRun.modelConfig.temperatures,
   };
 }
 
@@ -611,7 +784,12 @@ export async function runVerification(
 
   const result =
     version === "V3"
-      ? await runV3MultiStage(claimInput, sources, llmCaller, options?.stage4Temperature)
+      ? await runV3MultiStage(
+          claimInput,
+          sources,
+          llmCaller,
+          options?.stage4Temperature
+        )
       : await runSinglePass(version, claimInput, sources, llmCaller);
 
   const metrics = computeRunMetrics(result.claims, result.stages);

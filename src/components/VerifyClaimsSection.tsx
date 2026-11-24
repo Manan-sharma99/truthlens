@@ -7,7 +7,12 @@ import {
   downloadText,
   formatVerificationRunMarkdown,
 } from "@/lib/download";
-import type { ReferenceSource, VerificationRun } from "@/lib/types";
+import { ApiRequestError, readApiJson } from "@/lib/http";
+import type {
+  ReferenceSource,
+  StageTrace,
+  VerificationRun,
+} from "@/lib/types";
 import { ConfidenceBadge, VerdictBadge } from "./VerdictBadge";
 
 interface VerifyClaimsSectionProps {
@@ -16,6 +21,8 @@ interface VerifyClaimsSectionProps {
     updater: VerifyDraftState | ((prev: VerifyDraftState) => VerifyDraftState)
   ) => void;
   results: VerificationRun[];
+  onClearResults: () => void;
+  onAppendResult: (run: VerificationRun) => void;
   onRunCompleted: (runs: VerificationRun[]) => void;
   onInspectRunInWorkflow: (runId: string) => void;
 }
@@ -61,14 +68,47 @@ const SAMPLE_PRESETS = [
   },
 ];
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function hasV3Disagreement(
+  extractedClaims: Array<{ claimId?: string }>,
+  stage3Data: { verifications?: Array<{ claimId?: string; verdict?: string }> },
+  stage4Data: {
+    independentVerifications?: Array<{ claimId?: string; verdict?: string }>;
+  }
+): boolean {
+  const s3Map = new Map(
+    (stage3Data.verifications ?? []).map((v) => [
+      v.claimId,
+      (v.verdict ?? "").trim().toLowerCase(),
+    ])
+  );
+  const s4Map = new Map(
+    (stage4Data.independentVerifications ?? []).map((v) => [
+      v.claimId,
+      (v.verdict ?? "").trim().toLowerCase(),
+    ])
+  );
+  return extractedClaims.some((ec, idx) => {
+    const cid = ec.claimId || `C${idx + 1}`;
+    const v3 = s3Map.get(cid) || "insufficient evidence";
+    const v4 = s4Map.get(cid) || "insufficient evidence";
+    return v3 !== v4;
+  });
+}
+
 export function VerifyClaimsSection({
   draft,
   onDraftChange,
   results,
-  onRunCompleted,
+  onClearResults,
+  onAppendResult,
   onInspectRunInWorkflow,
 }: VerifyClaimsSectionProps) {
   const [loading, setLoading] = useState(false);
+  const [progressLabel, setProgressLabel] = useState<string>("");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -124,10 +164,12 @@ export function VerifyClaimsSection({
         method: "POST",
         body: formData,
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to parse file.");
-      }
+      const data = await readApiJson<{
+        title: string;
+        type: ReferenceSource["type"];
+        content: string;
+        charCount: number;
+      }>(res);
       onDraftChange((prev) => {
         const nextNum = prev.sources.length + 1;
         const newSource: ReferenceSource = {
@@ -150,24 +192,242 @@ export function VerifyClaimsSection({
     }
   }
 
+  async function postJsonWithBackoff<T>(
+    url: string,
+    payload: unknown,
+    stepLabel: string
+  ): Promise<T> {
+    setProgressLabel(stepLabel);
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      return await readApiJson<T>(res);
+    } catch (err) {
+      if (
+        err instanceof ApiRequestError &&
+        err.status === 429 &&
+        err.retryAfterSec !== undefined &&
+        err.retryAfterSec > 0 &&
+        err.retryAfterSec <= 25
+      ) {
+        setProgressLabel(
+          `Rate limit reached during ${stepLabel} — waiting ${err.retryAfterSec}s before retry...`
+        );
+        await sleep(err.retryAfterSec * 1000);
+        setProgressLabel(`${stepLabel} (retrying)...`);
+        const retryRes = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        return await readApiJson<T>(retryRes);
+      }
+      throw err;
+    }
+  }
+
+  async function runSinglePassRemote(v: "V1" | "V2"): Promise<VerificationRun> {
+    const data = await postJsonWithBackoff<{ runs?: VerificationRun[] }>(
+      "/api/verify",
+      { version: v, claimInput, sources },
+      `Running ${v}...`
+    );
+    const run = data.runs?.[0];
+    if (!run) {
+      throw new Error(`${v} returned an empty verification result.`);
+    }
+    return run;
+  }
+
+  async function runStagedV3Remote(): Promise<VerificationRun> {
+    const temperatures: Record<string, number> = {};
+    const priorTraces: StageTrace[] = [];
+
+    // Stage 1: Claim Extraction
+    const s1 = await postJsonWithBackoff<{
+      done: boolean;
+      run?: VerificationRun;
+      extractedClaims?: Array<{ claimId?: string }>;
+      unresolvedClaimEntities?: unknown[];
+      trace?: StageTrace;
+      templateId?: string;
+      temperature?: number;
+    }>(
+      "/api/verify/v3-step",
+      { step: "stage1", claimInput, sources },
+      "V3 Stage 1/5: Claim Extraction..."
+    );
+
+    if (s1.done && s1.run) {
+      return s1.run;
+    }
+    if (s1.trace) priorTraces.push(s1.trace);
+    if (s1.templateId && typeof s1.temperature === "number") {
+      temperatures[s1.templateId] = s1.temperature;
+    }
+
+    const extractedClaims = s1.extractedClaims ?? [];
+    const unresolvedClaimEntities = s1.unresolvedClaimEntities ?? [];
+
+    // Stage 2: Evidence Analysis
+    const s2 = await postJsonWithBackoff<{
+      stage2Data: unknown;
+      trace: StageTrace;
+      templateId: string;
+      temperature: number;
+    }>(
+      "/api/verify/v3-step",
+      {
+        step: "stage2",
+        claimInput,
+        sources,
+        extractedClaims,
+        unresolvedClaimEntities,
+      },
+      "V3 Stage 2/5: Evidence Analysis..."
+    );
+    priorTraces.push(s2.trace);
+    temperatures[s2.templateId] = s2.temperature;
+
+    // Stage 3: Claim Verification
+    const s3 = await postJsonWithBackoff<{
+      stage3Data: { verifications?: Array<{ claimId?: string; verdict?: string }> };
+      trace: StageTrace;
+      templateId: string;
+      temperature: number;
+    }>(
+      "/api/verify/v3-step",
+      {
+        step: "stage3",
+        claimInput,
+        sources,
+        extractedClaims,
+        stage2Data: s2.stage2Data,
+      },
+      "V3 Stage 3/5: Claim Verification..."
+    );
+    priorTraces.push(s3.trace);
+    temperatures[s3.templateId] = s3.temperature;
+
+    // Stage 4: Blind Independent Verification (receives claims + sources ONLY)
+    const s4 = await postJsonWithBackoff<{
+      stage4Data: {
+        independentVerifications?: Array<{ claimId?: string; verdict?: string }>;
+      };
+      trace: StageTrace;
+      templateId: string;
+      temperature: number;
+    }>(
+      "/api/verify/v3-step",
+      {
+        step: "stage4",
+        claimInput,
+        sources,
+        extractedClaims,
+      },
+      "V3 Stage 4/5: Blind Independent Verification..."
+    );
+    priorTraces.push(s4.trace);
+    temperatures[s4.templateId] = s4.temperature;
+
+    // Conditional Stage 4b: Disagreement Adjudication ONLY if Stage 3 & Stage 4 disagree
+    let stage4bData: unknown = undefined;
+    if (hasV3Disagreement(extractedClaims, s3.stage3Data, s4.stage4Data)) {
+      const s4b = await postJsonWithBackoff<{
+        skipped: boolean;
+        stage4bData: unknown;
+        trace?: StageTrace;
+        templateId?: string;
+        temperature?: number;
+      }>(
+        "/api/verify/v3-step",
+        {
+          step: "stage4b",
+          claimInput,
+          sources,
+          extractedClaims,
+          stage3Data: s3.stage3Data,
+          stage4Data: s4.stage4Data,
+        },
+        "V3 Stage 4b: Disagreement Reviewer..."
+      );
+      stage4bData = s4b.stage4bData;
+      if (!s4b.skipped && s4b.trace) {
+        priorTraces.push(s4b.trace);
+        if (s4b.templateId && typeof s4b.temperature === "number") {
+          temperatures[s4b.templateId] = s4b.temperature;
+        }
+      }
+    }
+
+    // Stage 5: Report Synthesis + Deterministic Citation/Confidence Finalization
+    const s5 = await postJsonWithBackoff<{ run: VerificationRun }>(
+      "/api/verify/v3-step",
+      {
+        step: "stage5",
+        claimInput,
+        sources,
+        extractedClaims,
+        stage3Data: s3.stage3Data,
+        stage4Data: s4.stage4Data,
+        stage4bData,
+        priorTraces,
+        temperatures,
+      },
+      "V3 Stage 5/5: Report Generation..."
+    );
+
+    return s5.run;
+  }
+
   async function handleVerify() {
     setLoading(true);
     setError(null);
+    setProgressLabel("");
+    // Clear previous run's displayed results immediately so failed runs never show stale outputs
+    onClearResults();
+
+    const versionsToRun: Array<"V1" | "V2" | "V3"> =
+      version === "ALL" ? ["V1", "V2", "V3"] : [version];
+    const failures: string[] = [];
+
     try {
-      const res = await fetch("/api/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ version, claimInput, sources }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Verification failed.");
+      for (const v of versionsToRun) {
+        try {
+          const run =
+            v === "V3"
+              ? await runStagedV3Remote()
+              : await runSinglePassRemote(v);
+          onAppendResult(run);
+        } catch (err) {
+          const msg =
+            err instanceof Error ? err.message : "Verification failed.";
+          failures.push(`${v}: ${msg}`);
+          // Fast-fail remaining versions only on missing API key or invalid input
+          if (
+            err instanceof ApiRequestError &&
+            (err.status === 400 || err.code === "MISSING_API_KEY")
+          ) {
+            break;
+          }
+        }
       }
-      onRunCompleted(data.runs ?? []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Verification failed.");
+
+      if (failures.length > 0) {
+        if (versionsToRun.length > 1 && failures.length < versionsToRun.length) {
+          setError(
+            `Partial comparison completed (successful version results were preserved). Failures — ${failures.join(" | ")}`
+          );
+        } else {
+          setError(failures.join(" | "));
+        }
+      }
     } finally {
       setLoading(false);
+      setProgressLabel("");
     }
   }
 
@@ -252,9 +512,9 @@ export function VerifyClaimsSection({
               {version === "V2" &&
                 "V2: Structured instructions, grounding constraints, and few-shot examples."}
               {version === "V3" &&
-                "V3: 5-stage workflow with blind independent verification & disagreement adjudication."}
+                "V3: 5-stage workflow executed stage-by-stage with blind independent verification & disagreement adjudication."}
               {version === "ALL" &&
-                "Runs V1, V2, and V3 sequentially on the same input for direct side-by-side comparison."}
+                "Runs V1, V2, and staged V3 sequentially on the same input, preserving each completed version."}
             </p>
           </div>
 
@@ -264,7 +524,9 @@ export function VerifyClaimsSection({
             onClick={handleVerify}
             className="w-full rounded-md bg-teal-600 px-4 py-2.5 text-sm font-medium text-slate-950 transition hover:bg-teal-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {loading ? "Running Verification..." : "Verify Against Sources"}
+            {loading
+              ? progressLabel || "Running Verification..."
+              : "Verify Against Sources"}
           </button>
         </div>
 
@@ -359,7 +621,7 @@ export function VerifyClaimsSection({
                 Side-by-Side Version Comparison (Live Session)
               </h3>
               <p className="mt-0.5 text-xs text-slate-400">
-                Direct comparison of V1, V2, and V3 verdicts, confidence,
+                Direct comparison of completed versions: verdicts, confidence,
                 citation validity, latency, and token cost.
               </p>
             </div>
@@ -471,7 +733,10 @@ export function VerifyClaimsSection({
               <button
                 type="button"
                 onClick={() =>
-                  downloadJson(`truthlens_${run.version}_${run.runId.slice(0, 8)}.json`, run)
+                  downloadJson(
+                    `truthlens_${run.version}_${run.runId.slice(0, 8)}.json`,
+                    run
+                  )
                 }
                 className="rounded border border-[#243049] bg-[#131b2e] px-2.5 py-1 text-xs text-slate-300 hover:border-teal-500/40"
               >

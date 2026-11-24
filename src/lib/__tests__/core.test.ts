@@ -12,6 +12,7 @@ import {
   recomputeEvalMetrics,
 } from "../evaluator.ts";
 import { checkRateLimit } from "../rate-limit.ts";
+import { ApiRequestError, readApiJson } from "../http.ts";
 import { runVerification, type StructuredLlmCaller } from "../pipeline.ts";
 import {
   listAllPromptTemplates,
@@ -601,4 +602,43 @@ test("read-only production mode reads public_academic_records.json without files
     if (prevWrites === undefined) delete process.env.TRUTHLENS_ALLOW_WRITES;
     else process.env.TRUTHLENS_ALLOW_WRITES = prevWrites;
   }
+});
+
+test("readApiJson safely handles non-JSON Vercel 504 timeout responses without JSON parse crashes", async () => {
+  const timeoutRes = new Response(
+    "An error occurred with your deployment\n\nFUNCTION_INVOCATION_TIMEOUT\n",
+    {
+      status: 504,
+      headers: { "content-type": "text/plain; charset=utf-8" },
+    }
+  );
+  await assert.rejects(
+    () => readApiJson(timeoutRes),
+    (err: unknown) =>
+      err instanceof ApiRequestError &&
+      err.status === 504 &&
+      err.message.includes("HTTP 504")
+  );
+
+  const structured429 = new Response(
+    JSON.stringify({
+      error: "Gemini API rate limit exceeded.",
+      code: "GEMINI_RATE_LIMIT",
+      retryAfterSec: 15,
+    }),
+    {
+      status: 429,
+      headers: {
+        "content-type": "application/json",
+        "retry-after": "15",
+      },
+    }
+  );
+  await assert.rejects(
+    () => readApiJson(structured429),
+    (err: unknown) =>
+      err instanceof ApiRequestError &&
+      err.status === 429 &&
+      err.retryAfterSec === 15
+  );
 });

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { runBenchmarkEvaluation } from "@/lib/evaluator";
-import { LlmParseError, MissingApiKeyError, RateLimitError } from "@/lib/llm";
 import { isReadOnlyProduction } from "@/lib/runtime";
 import type { EvalMode, EvalSplit, PromptVersion } from "@/lib/types";
+import { mapVerifyErrorToJsonResponse } from "@/lib/verify-http";
 
 export const maxDuration = 60;
 
@@ -46,24 +46,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ evalRuns });
   } catch (err) {
-    if (err instanceof MissingApiKeyError) {
-      return NextResponse.json({ error: err.message }, { status: 503 });
-    }
-    if (err instanceof RateLimitError) {
-      return NextResponse.json({ error: err.message }, { status: 429 });
-    }
-    if (err instanceof LlmParseError) {
-      return NextResponse.json(
-        { error: err.message, rawText: err.rawText },
-        { status: 502 }
-      );
-    }
-    return NextResponse.json(
-      {
-        error:
-          err instanceof Error ? err.message : "Evaluation request failed.",
-      },
-      { status: 500 }
-    );
+    return mapVerifyErrorToJsonResponse(err, "Evaluation request failed.");
   }
 }

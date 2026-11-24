@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { downloadJson } from "@/lib/download";
+import { readApiJson } from "@/lib/http";
 import type {
   AppValidationResult,
   EvalCase,
@@ -102,10 +103,7 @@ export function EvaluationSection({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ version, evalMode, splitFilter }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Evaluation failed.");
-      }
+      await readApiJson<{ evalRuns?: EvalRunResult[] }>(res);
       onEvalCompleted();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Evaluation failed.");
@@ -120,10 +118,7 @@ export function EvaluationSection({
     setError(null);
     try {
       const res = await fetch("/api/app-validation", { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "App validation failed.");
-      }
+      const data = await readApiJson<{ results?: AppValidationResult[] }>(res);
       if (Array.isArray(data.results)) {
         onAppValidationCompleted(data.results);
       }
