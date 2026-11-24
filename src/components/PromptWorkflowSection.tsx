@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { downloadJson } from "@/lib/download";
 import type { PromptTemplate, VerificationRun } from "@/lib/types";
 
 interface PromptWorkflowSectionProps {
   templates: PromptTemplate[];
   runs: VerificationRun[];
+  sessionRunIds: Set<string>;
   selectedRunId: string | null;
   onSelectRunId: (runId: string) => void;
 }
@@ -13,6 +15,7 @@ interface PromptWorkflowSectionProps {
 export function PromptWorkflowSection({
   templates,
   runs,
+  sessionRunIds,
   selectedRunId,
   onSelectRunId,
 }: PromptWorkflowSectionProps) {
@@ -43,7 +46,8 @@ export function PromptWorkflowSection({
             <code className="rounded bg-[#131b2e] px-1.5 py-0.5 text-xs text-teal-300">
               /prompts
             </code>{" "}
-            and examine stage-by-stage model inputs and outputs from real runs.
+            and examine stage-by-stage model inputs, temperatures, and raw
+            outputs from live session and historical runs.
           </p>
         </div>
 
@@ -151,20 +155,42 @@ export function PromptWorkflowSection({
           ) : (
             <>
               <div className="rounded-lg border border-[#243049] bg-[#111827] p-4">
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  Select Recorded Run
-                </label>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                    Select Recorded Run
+                  </label>
+                  {activeRun && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        downloadJson(
+                          `truthlens_trace_${activeRun.version}_${activeRun.runId.slice(0, 8)}.json`,
+                          activeRun
+                        )
+                      }
+                      className="rounded border border-[#243049] bg-[#131b2e] px-2.5 py-1 text-xs text-teal-300 hover:border-teal-500/40"
+                    >
+                      Download Complete Trace (JSON)
+                    </button>
+                  )}
+                </div>
                 <select
                   value={activeRun?.runId ?? ""}
                   onChange={(e) => onSelectRunId(e.target.value)}
                   className="mt-2 w-full rounded border border-[#243049] bg-[#090e1a] p-2 text-xs text-slate-200 focus:border-teal-500 focus:outline-none"
                 >
-                  {runs.map((r) => (
-                    <option key={r.runId} value={r.runId}>
-                      [{r.version}] {new Date(r.createdAt).toLocaleString()} —{" "}
-                      {r.claimInput.slice(0, 80)}
-                    </option>
-                  ))}
+                  {runs.map((r) => {
+                    const tag = sessionRunIds.has(r.runId)
+                      ? "LIVE SESSION"
+                      : "HISTORICAL";
+                    return (
+                      <option key={r.runId} value={r.runId}>
+                        [{tag}] [{r.version}]{" "}
+                        {new Date(r.createdAt).toLocaleString()} —{" "}
+                        {r.claimInput.slice(0, 75)}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 
@@ -172,6 +198,17 @@ export function PromptWorkflowSection({
                 <div className="space-y-4">
                   <div className="rounded-lg border border-[#243049] bg-[#111827] p-4 text-xs text-slate-300">
                     <div className="flex flex-wrap items-center gap-4">
+                      <span
+                        className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold ${
+                          sessionRunIds.has(activeRun.runId)
+                            ? "bg-teal-500/20 text-teal-300"
+                            : "bg-slate-700/40 text-slate-400"
+                        }`}
+                      >
+                        {sessionRunIds.has(activeRun.runId)
+                          ? "LIVE SESSION"
+                          : "HISTORICAL RECORD"}
+                      </span>
                       <span>
                         <strong>Version:</strong> {activeRun.version}
                       </span>
@@ -200,9 +237,14 @@ export function PromptWorkflowSection({
                       className="rounded-lg border border-[#243049] bg-[#111827] p-5"
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#1e293b] pb-3">
-                        <h3 className="text-sm font-semibold text-teal-300">
-                          {stage.stageName}
-                        </h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-semibold text-teal-300">
+                            {stage.stageName}
+                          </h3>
+                          <span className="rounded bg-[#1e293b] px-1.5 py-0.5 font-mono text-[10px] text-slate-400">
+                            {stage.templateId}
+                          </span>
+                        </div>
                         <div className="flex items-center gap-3 font-mono text-[11px] text-slate-400">
                           <span>temp: {stage.temperature}</span>
                           <span>{stage.latencyMs}ms</span>
@@ -212,7 +254,16 @@ export function PromptWorkflowSection({
                         </div>
                       </div>
 
-                      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+                      <details className="mt-3 rounded border border-[#1e293b] bg-[#090e1a] p-2.5 text-xs">
+                        <summary className="cursor-pointer font-medium text-slate-400 hover:text-slate-200">
+                          View System Prompt ({stage.templateId})
+                        </summary>
+                        <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-slate-300">
+                          {stage.systemPrompt}
+                        </pre>
+                      </details>
+
+                      <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-2">
                         <div>
                           <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                             Rendered User Prompt

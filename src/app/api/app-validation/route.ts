@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { POST as parseSourcePost } from "@/app/api/parse-source/route";
 import { POST as verifyPost } from "@/app/api/verify/route";
+import { isReadOnlyProduction } from "@/lib/runtime";
 import { saveAppValidationResults } from "@/lib/storage";
 import type { AppValidationResult } from "@/lib/types";
 
@@ -130,5 +131,5 @@ export async function POST() {
   }
 
   saveAppValidationResults(results);
-  return NextResponse.json({ results });
+  return NextResponse.json({ results, readOnly: isReadOnlyProduction() });
 }

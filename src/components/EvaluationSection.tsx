@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { downloadJson } from "@/lib/download";
 import type {
   AppValidationResult,
   EvalCase,
@@ -11,11 +12,32 @@ import type {
   PromptVersion,
 } from "@/lib/types";
 
+interface TemperatureExperimentRow {
+  evalId: string;
+  version: string;
+  split: string;
+  stage4Temperature: number;
+  totalCases: number;
+  verdictAccuracyOnExpected: number;
+  citationValidityRate: number;
+  totalExtractedClaims: number;
+  agreedClaims: number;
+  disagreedClaims: number;
+  stage4bActivations: number;
+  stage4bRescues: number;
+  duplicateClaimFailures: number;
+  avgLatencyMs: number;
+  totalTokens: number;
+}
+
 interface EvaluationSectionProps {
   evalRuns: EvalRunResult[];
   benchmarkCases: EvalCase[];
   appValidationResults: AppValidationResult[];
   promptIterations: PromptIterationEntry[];
+  temperatureExperiment: unknown[];
+  readOnlyProduction: boolean;
+  onAppValidationCompleted: (results: AppValidationResult[]) => void;
   onEvalCompleted: () => void;
   onInspectRunInWorkflow: (runId: string) => void;
 }
@@ -28,12 +50,18 @@ function escapeCsv(val: string | number | boolean): string {
   return s;
 }
 
-function downloadCsv(filename: string, headers: string[], rows: Array<Array<string | number | boolean>>) {
+function downloadCsv(
+  filename: string,
+  headers: string[],
+  rows: Array<Array<string | number | boolean>>
+) {
   const lines = [
     headers.map(escapeCsv).join(","),
     ...rows.map((r) => r.map(escapeCsv).join(",")),
   ];
-  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const blob = new Blob([lines.join("\n")], {
+    type: "text/csv;charset=utf-8;",
+  });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -47,6 +75,9 @@ export function EvaluationSection({
   benchmarkCases,
   appValidationResults,
   promptIterations,
+  temperatureExperiment,
+  readOnlyProduction,
+  onAppValidationCompleted,
   onEvalCompleted,
   onInspectRunInWorkflow,
 }: EvaluationSectionProps) {
@@ -59,8 +90,10 @@ export function EvaluationSection({
 
   const devCases = benchmarkCases.filter((c) => c.split === "development");
   const heldOutCases = benchmarkCases.filter((c) => c.split === "held_out");
+  const tempRows = (temperatureExperiment ?? []) as TemperatureExperimentRow[];
 
   async function handleRunEvaluation() {
+    if (readOnlyProduction) return;
     setRunning(true);
     setError(null);
     try {
@@ -76,7 +109,7 @@ export function EvaluationSection({
       onEvalCompleted();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Evaluation failed.");
-      onEvalCompleted(); // Refresh any incrementally saved partial results
+      onEvalCompleted();
     } finally {
       setRunning(false);
     }
@@ -87,11 +120,16 @@ export function EvaluationSection({
     setError(null);
     try {
       const res = await fetch("/api/app-validation", { method: "POST" });
+      const data = await res.json();
       if (!res.ok) {
-        const data = await res.json();
         throw new Error(data.error || "App validation failed.");
       }
-      onEvalCompleted();
+      if (Array.isArray(data.results)) {
+        onAppValidationCompleted(data.results);
+      }
+      if (!readOnlyProduction) {
+        onEvalCompleted();
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "App validation failed.");
     } finally {
@@ -114,7 +152,6 @@ export function EvaluationSection({
   );
 
   const hasIncompleteLatest = latestPerVersion.some((e) => e.partial);
-
   const allFailures = evalRuns.flatMap((e) => e.failures);
 
   function exportTestTableCsv() {
@@ -197,7 +234,7 @@ export function EvaluationSection({
             Evaluation &amp; Failure Analysis
           </h2>
           <p className="mt-1 text-sm text-slate-400">
-            Factual benchmark evaluation (
+            Historical academic benchmark records (
             <strong className="text-slate-200">
               {devCases.length} development
             </strong>{" "}
@@ -205,17 +242,19 @@ export function EvaluationSection({
             <strong className="text-slate-200">
               {heldOutCases.length} held-out
             </strong>
-            ), kept strictly separate from application input-validation tests.
+            ), kept strictly separate from deterministic application validation
+            and live verification sessions.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <select
             value={splitFilter}
+            disabled={readOnlyProduction}
             onChange={(e) =>
               setSplitFilter(e.target.value as EvalSplit | "all")
             }
-            className="rounded-md border border-[#243049] bg-[#111827] px-3 py-2 text-xs text-slate-200 focus:border-teal-500 focus:outline-none"
+            className="rounded-md border border-[#243049] bg-[#111827] px-3 py-2 text-xs text-slate-200 focus:border-teal-500 focus:outline-none disabled:opacity-50"
           >
             <option value="all">
               All Splits ({benchmarkCases.length})
@@ -230,8 +269,9 @@ export function EvaluationSection({
 
           <select
             value={evalMode}
+            disabled={readOnlyProduction}
             onChange={(e) => setEvalMode(e.target.value as EvalMode | "all")}
-            className="rounded-md border border-[#243049] bg-[#111827] px-3 py-2 text-xs text-slate-200 focus:border-teal-500 focus:outline-none"
+            className="rounded-md border border-[#243049] bg-[#111827] px-3 py-2 text-xs text-slate-200 focus:border-teal-500 focus:outline-none disabled:opacity-50"
           >
             <option value="all">All Modes</option>
             <option value="atomic">Atomic Claims Only</option>
@@ -240,10 +280,11 @@ export function EvaluationSection({
 
           <select
             value={version}
+            disabled={readOnlyProduction}
             onChange={(e) =>
               setVersion(e.target.value as PromptVersion | "ALL")
             }
-            className="rounded-md border border-[#243049] bg-[#111827] px-3 py-2 text-xs text-slate-200 focus:border-teal-500 focus:outline-none"
+            className="rounded-md border border-[#243049] bg-[#111827] px-3 py-2 text-xs text-slate-200 focus:border-teal-500 focus:outline-none disabled:opacity-50"
           >
             <option value="ALL">Compare V1, V2 &amp; V3</option>
             <option value="V1">V1 Only</option>
@@ -253,14 +294,33 @@ export function EvaluationSection({
 
           <button
             type="button"
-            disabled={running}
+            disabled={running || readOnlyProduction}
             onClick={handleRunEvaluation}
+            title={
+              readOnlyProduction
+                ? "Disabled in read-only production to prevent API quota exhaustion"
+                : "Execute live benchmark batch"
+            }
             className="rounded-md bg-teal-600 px-4 py-2 text-xs font-medium text-slate-950 transition hover:bg-teal-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {running ? "Running Benchmark..." : "Run Live Evaluation"}
+            {readOnlyProduction
+              ? "Benchmark Locked (Production)"
+              : running
+                ? "Running Benchmark..."
+                : "Run Live Evaluation"}
           </button>
         </div>
       </div>
+
+      {readOnlyProduction && (
+        <div className="rounded-lg border border-[#243049] bg-[#111827] p-3.5 text-xs text-slate-300">
+          <strong className="text-teal-300">Read-Only Production Mode:</strong>{" "}
+          Unrestricted multi-case benchmark execution is disabled to protect
+          shared Gemini API quota. All historical benchmark runs, temperature
+          experiments, failure traces, deterministic validation tests, and
+          CSV/JSON exports remain fully accessible.
+        </div>
+      )}
 
       {error && (
         <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-200">
@@ -271,15 +331,33 @@ export function EvaluationSection({
       {/* Version Comparison Table */}
       <div className="rounded-lg border border-[#243049] bg-[#111827] p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-slate-200">
-            Prompt Version Comparison (Latest Recorded Factual Runs)
-          </h3>
-          {hasIncompleteLatest && (
-            <span className="rounded bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-300">
-              Includes incomplete evaluation run(s) — metrics reflect completed cases only
-            </span>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold text-slate-200">
+              Prompt Version Comparison (Latest Historical Benchmark Runs)
+            </h3>
+            {hasIncompleteLatest && (
+              <span className="rounded bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-300">
+                Includes incomplete evaluation run(s) — metrics reflect
+                completed cases only
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            disabled={evalRuns.length === 0}
+            onClick={() =>
+              downloadJson("truthlens_evaluation_records.json", {
+                evalRuns,
+                temperatureExperiment: tempRows,
+                promptIterations,
+              })
+            }
+            className="rounded border border-[#243049] bg-[#131b2e] px-3 py-1.5 text-xs text-teal-300 hover:border-teal-500/40 disabled:opacity-40"
+          >
+            Export Evaluation Records (JSON)
+          </button>
         </div>
+
         {latestPerVersion.length === 0 ? (
           <p className="mt-3 text-sm text-slate-500">
             No benchmark evaluations recorded yet.
@@ -345,12 +423,84 @@ export function EvaluationSection({
         )}
       </div>
 
+      {/* Controlled Temperature Experiment */}
+      {tempRows.length > 0 && (
+        <div className="rounded-lg border border-[#243049] bg-[#111827] p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-200">
+                Controlled Temperature Experiment (V3 r2 Development Split —
+                Stage 4)
+              </h3>
+              <p className="mt-0.5 text-xs text-slate-400">
+                Compares Stage 4 temperature 0.0 (frozen) vs. 0.3 on identical
+                development inputs.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                downloadJson("truthlens_temperature_experiment.json", tempRows)
+              }
+              className="rounded border border-[#243049] bg-[#131b2e] px-3 py-1.5 text-xs text-teal-300 hover:border-teal-500/40"
+            >
+              Export Temperature Experiment (JSON)
+            </button>
+          </div>
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-[#243049] text-slate-400">
+                  <th className="pb-2 font-medium">Stage 4 Temp</th>
+                  <th className="pb-2 font-medium">Verdict Acc.</th>
+                  <th className="pb-2 font-medium">Citation Validity</th>
+                  <th className="pb-2 font-medium">Claims (Agreed/Total)</th>
+                  <th className="pb-2 font-medium">Stage 4b Rescues</th>
+                  <th className="pb-2 font-medium">Duplicate Claims</th>
+                  <th className="pb-2 font-medium">Avg Latency</th>
+                  <th className="pb-2 font-medium">Tokens</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#1e293b] text-slate-200">
+                {tempRows.map((row) => (
+                  <tr key={row.evalId}>
+                    <td className="py-2.5 font-mono font-semibold text-teal-300">
+                      {row.stage4Temperature.toFixed(1)}
+                      {row.stage4Temperature === 0 ? " (Frozen)" : ""}
+                    </td>
+                    <td className="py-2.5">
+                      {Math.round(row.verdictAccuracyOnExpected * 100)}%
+                    </td>
+                    <td className="py-2.5">
+                      {Math.round(row.citationValidityRate * 100)}%
+                    </td>
+                    <td className="py-2.5">
+                      {row.agreedClaims}/{row.totalExtractedClaims} (
+                      {row.disagreedClaims} disagreed)
+                    </td>
+                    <td className="py-2.5">
+                      {row.stage4bActivations}/{row.totalCases} cases (
+                      {row.stage4bRescues} rescued)
+                    </td>
+                    <td className="py-2.5">
+                      {row.duplicateClaimFailures}
+                    </td>
+                    <td className="py-2.5">{row.avgLatencyMs}ms</td>
+                    <td className="py-2.5">{row.totalTokens}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Complete Test Table + CSV Export */}
       <div className="rounded-lg border border-[#243049] bg-[#111827] p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h3 className="text-sm font-semibold text-slate-200">
-              Complete Test Table ({allCaseRows.length} Recorded Case Results)
+              Complete Test Table ({allCaseRows.length} Historical Case Results)
             </h3>
             <p className="mt-0.5 text-xs text-slate-400">
               All benchmark labels are marked{" "}
@@ -370,7 +520,7 @@ export function EvaluationSection({
 
         {allCaseRows.length === 0 ? (
           <p className="mt-3 text-sm text-slate-500">
-            Run an evaluation to populate case-level results.
+            No evaluation results available.
           </p>
         ) : (
           <div className="mt-4 max-h-96 overflow-auto">
@@ -406,10 +556,16 @@ export function EvaluationSection({
                     <td className="py-2 pr-3 font-mono text-teal-300">
                       {r.version}
                     </td>
-                    <td className="py-2 pr-3 max-w-[180px] truncate" title={r.expectedOutput}>
+                    <td
+                      className="max-w-[180px] truncate py-2 pr-3"
+                      title={r.expectedOutput}
+                    >
                       {r.expectedOutput}
                     </td>
-                    <td className="py-2 pr-3 max-w-[200px] truncate" title={r.actualOutput}>
+                    <td
+                      className="max-w-[200px] truncate py-2 pr-3"
+                      title={r.actualOutput}
+                    >
                       {r.actualOutput}
                     </td>
                     <td className="py-2 pr-3">
@@ -423,7 +579,10 @@ export function EvaluationSection({
                         {r.passed ? "PASS" : "FAIL"}
                       </span>
                     </td>
-                    <td className="py-2 pr-3 max-w-[180px] truncate text-slate-400" title={r.observedIssue}>
+                    <td
+                      className="max-w-[180px] truncate py-2 pr-3 text-slate-400"
+                      title={r.observedIssue}
+                    >
                       {r.observedIssue}
                     </td>
                     <td className="py-2">
@@ -452,7 +611,7 @@ export function EvaluationSection({
             </h3>
             <p className="mt-0.5 text-xs text-slate-400">
               Verifies deterministic rejection of empty claims, empty reference
-              sources, and corrupt/empty uploaded files.
+              sources, and corrupt/empty uploaded files (zero LLM calls).
             </p>
           </div>
           <button
@@ -541,7 +700,8 @@ export function EvaluationSection({
                   {it.iterationId} — {it.savedPromptVersion}
                 </span>
                 <span className="text-slate-500">
-                  {it.modelConfig} · {it.executionTimeMs}ms · {it.tokenUsage} tok
+                  {it.modelConfig} · {it.executionTimeMs}ms · {it.tokenUsage}{" "}
+                  tok
                 </span>
               </div>
               <div className="mt-2.5 grid grid-cols-1 gap-2 md:grid-cols-2">

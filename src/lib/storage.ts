@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { isReadOnlyProduction } from "./runtime.ts";
 import type {
   AppValidationResult,
   EvalCase,
@@ -9,9 +10,12 @@ import type {
 } from "./types.ts";
 
 const DATA_DIR = path.join(process.cwd(), "data");
+const EXPORTS_DIR = path.join(process.cwd(), "exports");
 const RUNS_FILE = path.join(DATA_DIR, "runs.json");
+const PUBLIC_RECORDS_FILE = path.join(DATA_DIR, "public_academic_records.json");
 const EVAL_BENCHMARK_FILE = path.join(DATA_DIR, "eval_benchmark.json");
 const ITERATIONS_FILE = path.join(DATA_DIR, "prompt_iterations.json");
+const TEMP_EXPERIMENT_FILE = path.join(EXPORTS_DIR, "temperature_experiment.json");
 
 interface PersistedStore {
   verificationRuns: VerificationRun[];
@@ -19,21 +23,16 @@ interface PersistedStore {
   appValidationResults: AppValidationResult[];
 }
 
-function ensureStore(): PersistedStore {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
-  if (!fs.existsSync(RUNS_FILE)) {
-    const empty: PersistedStore = {
+function readStoreFile(filePath: string): PersistedStore {
+  if (!fs.existsSync(filePath)) {
+    return {
       verificationRuns: [],
       evalRuns: [],
       appValidationResults: [],
     };
-    fs.writeFileSync(RUNS_FILE, JSON.stringify(empty, null, 2), "utf-8");
-    return empty;
   }
-  const raw = fs.readFileSync(RUNS_FILE, "utf-8");
   try {
+    const raw = fs.readFileSync(filePath, "utf-8");
     const parsed = JSON.parse(raw) as Partial<PersistedStore>;
     return {
       verificationRuns: Array.isArray(parsed.verificationRuns)
@@ -53,7 +52,34 @@ function ensureStore(): PersistedStore {
   }
 }
 
+function ensureStore(): PersistedStore {
+  // In read-only production (e.g. Vercel), never write to disk; read privacy-reviewed records only
+  if (isReadOnlyProduction()) {
+    if (fs.existsSync(PUBLIC_RECORDS_FILE)) {
+      return readStoreFile(PUBLIC_RECORDS_FILE);
+    }
+    return readStoreFile(RUNS_FILE);
+  }
+
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+  if (!fs.existsSync(RUNS_FILE)) {
+    const empty: PersistedStore = {
+      verificationRuns: [],
+      evalRuns: [],
+      appValidationResults: [],
+    };
+    fs.writeFileSync(RUNS_FILE, JSON.stringify(empty, null, 2), "utf-8");
+    return empty;
+  }
+  return readStoreFile(RUNS_FILE);
+}
+
 function writeStore(store: PersistedStore): void {
+  if (isReadOnlyProduction()) {
+    return;
+  }
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
   }
@@ -61,6 +87,7 @@ function writeStore(store: PersistedStore): void {
 }
 
 export function saveVerificationRun(run: VerificationRun): void {
+  if (isReadOnlyProduction()) return;
   const store = ensureStore();
   store.verificationRuns.unshift(run);
   store.verificationRuns = store.verificationRuns.slice(0, 150);
@@ -68,6 +95,7 @@ export function saveVerificationRun(run: VerificationRun): void {
 }
 
 export function saveEvalRun(evalRun: EvalRunResult): void {
+  if (isReadOnlyProduction()) return;
   const store = ensureStore();
   const idx = store.evalRuns.findIndex((e) => e.evalId === evalRun.evalId);
   if (idx >= 0) {
@@ -82,6 +110,7 @@ export function saveEvalRun(evalRun: EvalRunResult): void {
 export function saveAppValidationResults(
   results: AppValidationResult[]
 ): void {
+  if (isReadOnlyProduction()) return;
   const store = ensureStore();
   store.appValidationResults = results;
   writeStore(store);
@@ -92,6 +121,7 @@ export function getPersistedData(): PersistedStore {
 }
 
 export function clearPersistedData(): void {
+  if (isReadOnlyProduction()) return;
   writeStore({
     verificationRuns: [],
     evalRuns: [],
@@ -115,7 +145,21 @@ export function loadPromptIterations(): PromptIterationEntry[] {
   return JSON.parse(raw) as PromptIterationEntry[];
 }
 
+export function loadTemperatureExperiment(): unknown[] {
+  if (!fs.existsSync(TEMP_EXPERIMENT_FILE)) {
+    return [];
+  }
+  try {
+    const raw = fs.readFileSync(TEMP_EXPERIMENT_FILE, "utf-8");
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 export function savePromptIteration(entry: PromptIterationEntry): void {
+  if (isReadOnlyProduction()) return;
   const list = loadPromptIterations();
   const idx = list.findIndex((i) => i.iterationId === entry.iterationId);
   if (idx >= 0) {
@@ -133,17 +177,15 @@ export function savePromptIteration(entry: PromptIterationEntry): void {
 export function loadLatestPartialEvalRun(
   version: string,
   splitFilter: string
-): import("./types").EvalRunResult | undefined {
+): EvalRunResult | undefined {
   const store = ensureStore();
-  // Find the most recent partial run matching version + split
   const matching = store.evalRuns.filter(
     (e) =>
       e.version === version &&
       e.splitFilter === splitFilter &&
-      (e as unknown as Record<string, unknown>).partial === true
+      Boolean(e.partial)
   );
   if (matching.length === 0) return undefined;
-  // Sort by createdAt descending, return the most recent
   matching.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return matching[0];
 }

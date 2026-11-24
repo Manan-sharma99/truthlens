@@ -11,12 +11,14 @@ import {
   matchClaimsOneToOne,
   recomputeEvalMetrics,
 } from "../evaluator.ts";
+import { checkRateLimit } from "../rate-limit.ts";
 import { runVerification, type StructuredLlmCaller } from "../pipeline.ts";
 import {
   listAllPromptTemplates,
   renderPromptTemplate,
 } from "../prompt-loader.ts";
-import { loadEvalBenchmark } from "../storage.ts";
+import { isReadOnlyProduction } from "../runtime.ts";
+import { getPersistedData, loadEvalBenchmark } from "../storage.ts";
 import type { ReferenceSource } from "../types.ts";
 
 const SAMPLE_SOURCES: ReferenceSource[] = [
@@ -566,4 +568,37 @@ test("[SIMULATED FIXTURE] irrelevant evidence yields Insufficient Evidence with 
   assert.equal(run.claims[0].verdict, "Insufficient Evidence");
   assert.ok(run.claims[0].missingInformation?.includes("No financial statements"));
   assert.ok(run.claims[0].requiredEvidence?.includes("earnings release"));
+});
+
+test("checkRateLimit enforces sliding window limits and resets key counts cleanly", () => {
+  const key = `test-ip-${Date.now()}`;
+  const r1 = checkRateLimit(key, 2, 60_000);
+  const r2 = checkRateLimit(key, 2, 60_000);
+  const r3 = checkRateLimit(key, 2, 60_000);
+  assert.equal(r1.allowed, true);
+  assert.equal(r2.allowed, true);
+  assert.equal(r3.allowed, false);
+  assert.ok(r3.retryAfterSec >= 1);
+});
+
+test("read-only production mode reads public_academic_records.json without filesystem writes", () => {
+  const prevVercel = process.env.VERCEL;
+  const prevWrites = process.env.TRUTHLENS_ALLOW_WRITES;
+  try {
+    process.env.VERCEL = "1";
+    delete process.env.TRUTHLENS_ALLOW_WRITES;
+    assert.equal(isReadOnlyProduction(), true);
+    const data = getPersistedData();
+    assert.ok(data.verificationRuns.length >= 100);
+    assert.ok(data.evalRuns.length >= 10);
+    assert.equal(
+      data.verificationRuns.some((r) => r.claimInput.trim() === "Test quota"),
+      false
+    );
+  } finally {
+    if (prevVercel === undefined) delete process.env.VERCEL;
+    else process.env.VERCEL = prevVercel;
+    if (prevWrites === undefined) delete process.env.TRUTHLENS_ALLOW_WRITES;
+    else process.env.TRUTHLENS_ALLOW_WRITES = prevWrites;
+  }
 });

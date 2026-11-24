@@ -5,20 +5,31 @@ import { VerdictBadge } from "./VerdictBadge";
 
 interface OverviewSectionProps {
   verificationRuns: VerificationRun[];
+  sessionRunIds: Set<string>;
   evalRuns: EvalRunResult[];
   apiConfigured: boolean | null;
   modelName: string;
+  readOnlyProduction: boolean;
+  onClearSession: () => void;
   onNavigate: (tab: "verify" | "workflow" | "evaluation") => void;
 }
 
 export function OverviewSection({
   verificationRuns,
+  sessionRunIds,
   evalRuns,
   apiConfigured,
   modelName,
+  readOnlyProduction,
+  onClearSession,
   onNavigate,
 }: OverviewSectionProps) {
   const totalRuns = verificationRuns.length;
+  const sessionCount = verificationRuns.filter((r) =>
+    sessionRunIds.has(r.runId)
+  ).length;
+  const historicalCount = totalRuns - sessionCount;
+
   const allClaims = verificationRuns.flatMap((r) => r.claims);
   const totalClaims = allClaims.length;
 
@@ -59,34 +70,48 @@ export function OverviewSection({
             Overview
           </h2>
           <p className="mt-1 text-sm text-slate-400">
-            Verification statistics and prompt performance computed strictly from
-            persisted model runs.
+            Verification statistics and prompt performance computed from{" "}
+            {readOnlyProduction
+              ? "read-only historical academic records and your live browser session."
+              : "persisted model runs and live session results."}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {sessionCount > 0 && (
+            <button
+              type="button"
+              onClick={onClearSession}
+              className="rounded-md border border-[#243049] bg-[#131b2e] px-3 py-2 text-xs font-medium text-slate-300 transition hover:border-rose-500/40 hover:text-rose-200"
+            >
+              Clear Live Session ({sessionCount})
+            </button>
+          )}
           <button
+            type="button"
             onClick={() => onNavigate("verify")}
             className="rounded-md bg-teal-600 px-3.5 py-2 text-xs font-medium text-slate-950 transition hover:bg-teal-500"
           >
             New Verification
           </button>
           <button
+            type="button"
             onClick={() => onNavigate("evaluation")}
             className="rounded-md border border-[#243049] bg-[#131b2e] px-3.5 py-2 text-xs font-medium text-slate-200 transition hover:border-teal-500/40"
           >
-            Run Evaluation
+            View Evaluation
           </button>
         </div>
       </div>
 
       {apiConfigured === false && (
         <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 p-4 text-sm text-amber-200">
-          <span className="font-semibold">API Key Not Configured:</span> Add{" "}
+          <span className="font-semibold">API Key Not Configured:</span>{" "}
+          Configure{" "}
           <code className="rounded bg-black/30 px-1.5 py-0.5 text-xs">
             GEMINI_API_KEY
           </code>{" "}
-          to <code className="rounded bg-black/30 px-1.5 py-0.5 text-xs">.env.local</code>{" "}
-          and restart the server to execute live verifications and evaluations.
+          in environment variables to execute live verifications. Historical
+          academic evaluation records remain viewable.
         </div>
       )}
 
@@ -100,7 +125,7 @@ export function OverviewSection({
             {totalRuns}
           </div>
           <div className="mt-1 text-xs text-slate-500">
-            Model: {modelName || "Not set"}
+            {sessionCount} live session · {historicalCount} historical
           </div>
         </div>
 
@@ -112,7 +137,7 @@ export function OverviewSection({
             {totalClaims}
           </div>
           <div className="mt-1 text-xs text-slate-500">
-            Across all prompt versions
+            Model: {modelName || "Not set"}
           </div>
         </div>
 
@@ -136,7 +161,7 @@ export function OverviewSection({
             {evalRuns.length}
           </div>
           <div className="mt-1 text-xs text-slate-500">
-            Recorded benchmark suites
+            Historical benchmark records
           </div>
         </div>
       </div>
@@ -145,12 +170,12 @@ export function OverviewSection({
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="rounded-lg border border-[#243049] bg-[#111827] p-5">
           <h3 className="text-sm font-semibold text-slate-200">
-            Verdict Distribution (Actual Runs)
+            Verdict Distribution (Session + Historical)
           </h3>
           {totalClaims === 0 ? (
             <p className="mt-4 text-sm text-slate-500">
-              No claims verified yet. Run a verification or benchmark evaluation
-              to populate real verdict statistics.
+              No claims verified yet. Run a verification to populate verdict
+              statistics.
             </p>
           ) : (
             <div className="mt-4 space-y-3">
@@ -180,7 +205,7 @@ export function OverviewSection({
 
         <div className="rounded-lg border border-[#243049] bg-[#111827] p-5">
           <h3 className="text-sm font-semibold text-slate-200">
-            Prompt Version Snapshot
+            Prompt Version Snapshot (Historical Benchmarks)
           </h3>
           <div className="mt-4 overflow-x-auto">
             <table className="w-full text-left text-xs">
@@ -232,9 +257,10 @@ export function OverviewSection({
       <div className="rounded-lg border border-[#243049] bg-[#111827] p-5">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold text-slate-200">
-            Recent Verification Runs
+            Recent Verification Runs (Live Session Highlighted First)
           </h3>
           <button
+            type="button"
             onClick={() => onNavigate("workflow")}
             className="text-xs text-teal-400 hover:text-teal-300"
           >
@@ -247,32 +273,45 @@ export function OverviewSection({
           </p>
         ) : (
           <div className="mt-4 divide-y divide-[#1e293b]">
-            {verificationRuns.slice(0, 6).map((run) => (
-              <div
-                key={run.runId}
-                className="flex flex-wrap items-center justify-between gap-3 py-3 text-xs"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded bg-[#1e293b] px-1.5 py-0.5 font-mono text-[11px] text-teal-300">
-                      {run.version}
-                    </span>
-                    <span className="truncate font-medium text-slate-200">
-                      {run.claimInput}
-                    </span>
+            {verificationRuns.slice(0, 8).map((run) => {
+              const isLive = sessionRunIds.has(run.runId);
+              return (
+                <div
+                  key={run.runId}
+                  className="flex flex-wrap items-center justify-between gap-3 py-3 text-xs"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold ${
+                          isLive
+                            ? "bg-teal-500/20 text-teal-300"
+                            : "bg-slate-700/40 text-slate-400"
+                        }`}
+                      >
+                        {isLive ? "LIVE SESSION" : "HISTORICAL"}
+                      </span>
+                      <span className="rounded bg-[#1e293b] px-1.5 py-0.5 font-mono text-[11px] text-teal-300">
+                        {run.version}
+                      </span>
+                      <span className="truncate font-medium text-slate-200">
+                        {run.claimInput}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-slate-500">
+                      {new Date(run.createdAt).toLocaleString()} ·{" "}
+                      {run.claims.length} claim(s) ·{" "}
+                      {run.metrics.totalLatencyMs}ms
+                    </div>
                   </div>
-                  <div className="mt-1 text-slate-500">
-                    {new Date(run.createdAt).toLocaleString()} ·{" "}
-                    {run.claims.length} claim(s) · {run.metrics.totalLatencyMs}ms
+                  <div className="flex flex-wrap gap-1.5">
+                    {run.claims.slice(0, 3).map((c) => (
+                      <VerdictBadge key={c.claimId} verdict={c.verdict} />
+                    ))}
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {run.claims.slice(0, 3).map((c) => (
-                    <VerdictBadge key={c.claimId} verdict={c.verdict} />
-                  ))}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

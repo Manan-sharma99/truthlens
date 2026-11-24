@@ -1,15 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import type {
-  PromptVersion,
-  ReferenceSource,
-  VerificationRun,
-} from "@/lib/types";
+import type { VerifyDraftState } from "@/app/page";
+import {
+  downloadJson,
+  downloadText,
+  formatVerificationRunMarkdown,
+} from "@/lib/download";
+import type { ReferenceSource, VerificationRun } from "@/lib/types";
 import { ConfidenceBadge, VerdictBadge } from "./VerdictBadge";
 
 interface VerifyClaimsSectionProps {
-  onRunCompleted: () => void;
+  draft: VerifyDraftState;
+  onDraftChange: (
+    updater: VerifyDraftState | ((prev: VerifyDraftState) => VerifyDraftState)
+  ) => void;
+  results: VerificationRun[];
+  onRunCompleted: (runs: VerificationRun[]) => void;
   onInspectRunInWorkflow: (runId: string) => void;
 }
 
@@ -55,52 +62,54 @@ const SAMPLE_PRESETS = [
 ];
 
 export function VerifyClaimsSection({
+  draft,
+  onDraftChange,
+  results,
   onRunCompleted,
   onInspectRunInWorkflow,
 }: VerifyClaimsSectionProps) {
-  const [claimInput, setClaimInput] = useState("");
-  const [sources, setSources] = useState<ReferenceSource[]>([
-    {
-      id: "S1",
-      title: "Reference Source 1",
-      type: "text",
-      content: "",
-      charCount: 0,
-    },
-  ]);
-  const [version, setVersion] = useState<PromptVersion | "ALL">("V3");
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [results, setResults] = useState<VerificationRun[]>([]);
+
+  const { claimInput, sources, version } = draft;
 
   function addTextSource() {
-    const nextNum = sources.length + 1;
-    setSources((prev) => [
-      ...prev,
-      {
-        id: `S${nextNum}`,
-        title: `Reference Source ${nextNum}`,
-        type: "text",
-        content: "",
-        charCount: 0,
-      },
-    ]);
+    onDraftChange((prev) => {
+      const nextNum = prev.sources.length + 1;
+      return {
+        ...prev,
+        sources: [
+          ...prev.sources,
+          {
+            id: `S${nextNum}`,
+            title: `Reference Source ${nextNum}`,
+            type: "text",
+            content: "",
+            charCount: 0,
+          },
+        ],
+      };
+    });
   }
 
   function updateSource(idx: number, patch: Partial<ReferenceSource>) {
-    setSources((prev) =>
-      prev.map((s, i) => {
+    onDraftChange((prev) => ({
+      ...prev,
+      sources: prev.sources.map((s, i) => {
         if (i !== idx) return s;
         const updated = { ...s, ...patch };
         updated.charCount = updated.content.length;
         return updated;
-      })
-    );
+      }),
+    }));
   }
 
   function removeSource(idx: number) {
-    setSources((prev) => prev.filter((_, i) => i !== idx));
+    onDraftChange((prev) => ({
+      ...prev,
+      sources: prev.sources.filter((_, i) => i !== idx),
+    }));
   }
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -119,20 +128,20 @@ export function VerifyClaimsSection({
       if (!res.ok) {
         throw new Error(data.error || "Failed to parse file.");
       }
-      const nextNum = sources.length + 1;
-      const newSource: ReferenceSource = {
-        id: `S${nextNum}`,
-        title: data.title,
-        type: data.type,
-        content: data.content,
-        charCount: data.charCount,
-      };
-      // Replace single empty default source if unused
-      if (sources.length === 1 && !sources[0].content.trim()) {
-        setSources([{ ...newSource, id: "S1" }]);
-      } else {
-        setSources((prev) => [...prev, newSource]);
-      }
+      onDraftChange((prev) => {
+        const nextNum = prev.sources.length + 1;
+        const newSource: ReferenceSource = {
+          id: `S${nextNum}`,
+          title: data.title,
+          type: data.type,
+          content: data.content,
+          charCount: data.charCount,
+        };
+        if (prev.sources.length === 1 && !prev.sources[0].content.trim()) {
+          return { ...prev, sources: [{ ...newSource, id: "S1" }] };
+        }
+        return { ...prev, sources: [...prev.sources, newSource] };
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "File upload failed.");
     } finally {
@@ -154,8 +163,7 @@ export function VerifyClaimsSection({
       if (!res.ok) {
         throw new Error(data.error || "Verification failed.");
       }
-      setResults(data.runs ?? []);
-      onRunCompleted();
+      onRunCompleted(data.runs ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Verification failed.");
     } finally {
@@ -180,10 +188,13 @@ export function VerifyClaimsSection({
             <button
               key={preset.label}
               type="button"
-              onClick={() => {
-                setClaimInput(preset.claim);
-                setSources(preset.sources);
-              }}
+              onClick={() =>
+                onDraftChange((prev) => ({
+                  ...prev,
+                  claimInput: preset.claim,
+                  sources: preset.sources,
+                }))
+              }
               className="rounded border border-[#243049] bg-[#131b2e] px-2.5 py-1.5 text-xs text-slate-300 transition hover:border-teal-500/40 hover:text-teal-200"
             >
               Load: {preset.label}
@@ -202,7 +213,12 @@ export function VerifyClaimsSection({
             </label>
             <textarea
               value={claimInput}
-              onChange={(e) => setClaimInput(e.target.value)}
+              onChange={(e) =>
+                onDraftChange((prev) => ({
+                  ...prev,
+                  claimInput: e.target.value,
+                }))
+              }
               rows={6}
               placeholder="Paste a social media post, news claim, or AI-generated paragraph to fact-check..."
               className="mt-2 w-full rounded-md border border-[#243049] bg-[#090e1a] p-3 text-sm text-slate-100 placeholder-slate-500 focus:border-teal-500 focus:outline-none"
@@ -218,7 +234,9 @@ export function VerifyClaimsSection({
                 <button
                   key={v}
                   type="button"
-                  onClick={() => setVersion(v)}
+                  onClick={() =>
+                    onDraftChange((prev) => ({ ...prev, version: v }))
+                  }
                   className={`rounded-md border px-3 py-2 text-xs font-medium transition ${
                     version === v
                       ? "border-teal-400 bg-teal-500/15 text-teal-200"
@@ -236,7 +254,7 @@ export function VerifyClaimsSection({
               {version === "V3" &&
                 "V3: 5-stage workflow with blind independent verification & disagreement adjudication."}
               {version === "ALL" &&
-                "Runs V1, V2, and V3 sequentially on the same input for direct comparison."}
+                "Runs V1, V2, and V3 sequentially on the same input for direct side-by-side comparison."}
             </p>
           </div>
 
@@ -332,14 +350,105 @@ export function VerifyClaimsSection({
         </div>
       )}
 
-      {/* Results */}
+      {/* Side-by-Side Comparison Matrix when Compare All Versions is run */}
+      {results.length > 1 && (
+        <div className="rounded-lg border border-teal-500/30 bg-[#111827] p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#243049] pb-3">
+            <div>
+              <h3 className="text-sm font-semibold text-teal-200">
+                Side-by-Side Version Comparison (Live Session)
+              </h3>
+              <p className="mt-0.5 text-xs text-slate-400">
+                Direct comparison of V1, V2, and V3 verdicts, confidence,
+                citation validity, latency, and token cost.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                downloadJson(
+                  `truthlens_comparison_${new Date().toISOString().slice(0, 10)}.json`,
+                  results
+                )
+              }
+              className="rounded border border-[#243049] bg-[#131b2e] px-3 py-1.5 text-xs text-teal-300 hover:border-teal-500/40"
+            >
+              Download Comparison Trace (JSON)
+            </button>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+            {results.map((run) => (
+              <div
+                key={`cmp-${run.runId}`}
+                className="flex flex-col justify-between rounded-md border border-[#243049] bg-[#090e1a] p-4"
+              >
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between border-b border-[#1e293b] pb-2">
+                    <span className="rounded bg-teal-500/15 px-2 py-0.5 font-mono text-xs font-semibold text-teal-300">
+                      {run.version}
+                    </span>
+                    <span className="font-mono text-[11px] text-slate-400">
+                      {run.metrics.totalLatencyMs}ms ·{" "}
+                      {run.metrics.totalInputTokens +
+                        run.metrics.totalOutputTokens}{" "}
+                      tok
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {run.claims.map((c) => (
+                      <div
+                        key={c.claimId}
+                        className="rounded border border-[#1e293b] bg-[#111827] p-2.5 text-xs"
+                      >
+                        <div className="font-medium text-slate-200">
+                          {c.claimId}: {c.claimText}
+                        </div>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                          <VerdictBadge verdict={c.verdict} />
+                          <ConfidenceBadge
+                            confidence={c.confidence}
+                            reason={c.confidenceReason}
+                          />
+                        </div>
+                        <div className="mt-1 text-[10px] text-slate-400">
+                          Truth Conf: {c.factualTruthConfidence} · Citations:{" "}
+                          {c.citations.filter((x) => x.verified).length}/
+                          {c.citations.length}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center justify-between border-t border-[#1e293b] pt-2 text-[11px]">
+                  <span className="text-slate-400">
+                    Stages: {run.stages.length}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onInspectRunInWorkflow(run.runId)}
+                    className="text-teal-400 hover:text-teal-300"
+                  >
+                    Inspect Trace →
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Detailed Results */}
       {results.map((run) => (
         <div
           key={run.runId}
           className="space-y-4 rounded-lg border border-[#243049] bg-[#111827] p-5"
         >
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#243049] pb-3">
-            <div className="flex items-center gap-2.5">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <span className="rounded bg-teal-500/20 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-teal-300">
+                LIVE SESSION
+              </span>
               <span className="rounded bg-teal-500/15 px-2 py-0.5 font-mono text-xs font-semibold text-teal-300">
                 {run.version}
               </span>
@@ -352,13 +461,34 @@ export function VerifyClaimsSection({
                 tokens
               </span>
             </div>
-            <div className="flex items-center gap-3 text-xs">
+            <div className="flex flex-wrap items-center gap-2 text-xs">
               <span className="text-slate-400">
                 Verbatim Citations:{" "}
                 <strong className="text-teal-300">
                   {run.metrics.verifiedCitations}/{run.metrics.totalCitations}
                 </strong>
               </span>
+              <button
+                type="button"
+                onClick={() =>
+                  downloadJson(`truthlens_${run.version}_${run.runId.slice(0, 8)}.json`, run)
+                }
+                className="rounded border border-[#243049] bg-[#131b2e] px-2.5 py-1 text-xs text-slate-300 hover:border-teal-500/40"
+              >
+                Download JSON
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  downloadText(
+                    `truthlens_${run.version}_${run.runId.slice(0, 8)}.md`,
+                    formatVerificationRunMarkdown(run)
+                  )
+                }
+                className="rounded border border-[#243049] bg-[#131b2e] px-2.5 py-1 text-xs text-slate-300 hover:border-teal-500/40"
+              >
+                Download MD
+              </button>
               <button
                 type="button"
                 onClick={() => onInspectRunInWorkflow(run.runId)}
@@ -416,6 +546,21 @@ export function VerifyClaimsSection({
                 <p className="mt-2 text-xs leading-relaxed text-slate-300">
                   {claim.explanation}
                 </p>
+
+                {claim.missingInformation && (
+                  <div className="mt-2 rounded border border-amber-500/25 bg-amber-500/5 p-2.5 text-[11px] text-amber-200">
+                    <div>
+                      <strong>Missing Information:</strong>{" "}
+                      {claim.missingInformation}
+                    </div>
+                    {claim.requiredEvidence && (
+                      <div className="mt-1">
+                        <strong>Required Evidence:</strong>{" "}
+                        {claim.requiredEvidence}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="mt-2 space-y-1 text-[11px] text-slate-400">
                   <div>

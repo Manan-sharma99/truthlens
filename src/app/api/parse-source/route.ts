@@ -1,9 +1,26 @@
 import { NextResponse } from "next/server";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limit";
+import { isReadOnlyProduction } from "@/lib/runtime";
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
 
 export async function POST(req: Request) {
   try {
+    if (isReadOnlyProduction()) {
+      const ip = getClientIp(req);
+      const limit = checkRateLimit(`parse:${ip}`, 20, 60_000);
+      if (!limit.allowed) {
+        return NextResponse.json(
+          {
+            error: `Upload rate limit exceeded. Please retry in ${limit.retryAfterSec}s.`,
+          },
+          {
+            status: 429,
+            headers: { "Retry-After": String(limit.retryAfterSec) },
+          }
+        );
+      }
+    }
     const formData = await req.formData();
     const file = formData.get("file");
 

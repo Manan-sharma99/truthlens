@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { runBenchmarkEvaluation } from "@/lib/evaluator";
 import { LlmParseError, MissingApiKeyError, RateLimitError } from "@/lib/llm";
+import { isReadOnlyProduction } from "@/lib/runtime";
 import type { EvalMode, EvalSplit, PromptVersion } from "@/lib/types";
+
+export const maxDuration = 60;
 
 interface EvaluateRequestBody {
   version?: PromptVersion | "ALL";
@@ -13,6 +16,16 @@ interface EvaluateRequestBody {
 }
 
 export async function POST(req: Request) {
+  if (isReadOnlyProduction()) {
+    return NextResponse.json(
+      {
+        error:
+          "Live benchmark batch execution is disabled in read-only production to prevent API quota exhaustion. Historical evaluation records and exports remain available below.",
+      },
+      { status: 403 }
+    );
+  }
+
   try {
     const body = (await req.json()) as EvaluateRequestBody;
     const version = body.version ?? "ALL";

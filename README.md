@@ -202,6 +202,20 @@ npm run dev
 
 Open `http://localhost:3000` in your browser.
 
+### Vercel Deployment (Database-Free)
+
+TruthLens can be deployed directly to Vercel from GitHub with zero external database:
+
+1. Import the GitHub repository in Vercel (Next.js preset, root directory `.`).
+2. Add Environment Variables in Vercel Project Settings:
+   - `GEMINI_API_KEY`: Your Google Gemini API key (kept strictly server-side).
+   - `GEMINI_MODEL`: Optional model identifier (e.g. `gemini-3.5-flash-lite` or `gemini-2.5-flash`).
+3. Deploy. In production (`VERCEL=1` / `NODE_ENV=production`), TruthLens automatically operates in **read-only historical + live session mode**:
+   - Zero deployment filesystem writes (historical records are loaded read-only from [`data/public_academic_records.json`](data/public_academic_records.json), and `outputFileTracingIncludes` in [`next.config.ts`](next.config.ts) bundles `prompts/`, `data/`, and `exports/`).
+   - Live verifications (`V1`, `V2`, `V3`, and `Compare V1–V3`) return complete execution traces (`systemPrompt`, rendered prompts, raw outputs, citations, confidence, latency, tokens) and persist in shared React state + browser `sessionStorage` across all tabs.
+   - Users can download verification reports (`.json` / `.md`), full stage traces (`.json`), and evaluation records (`.csv` / `.json`).
+   - `POST /api/evaluate` and `DELETE /api/runs` return `HTTP 403` in production to protect API quota and historical academic records, while `POST /api/verify` and `POST /api/parse-source` enforce per-IP rate limiting and payload bounds.
+
 ---
 
 ## API Configuration
