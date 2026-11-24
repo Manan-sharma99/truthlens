@@ -1,0 +1,11 @@
+{
+  "id": "v3-stage-5-r1",
+  "version": "V3",
+  "stage": "Stage 5: Report Generation",
+  "stageNumber": 5,
+  "name": "Neutral Grounded Report Synthesis (r1)",
+  "description": "Synthesizes verified claims without describing user-supplied sources as reliable or authoritative, and distinguishes citation validity, evidence correctness, and source credibility.",
+  "temperature": 0.1,
+  "systemPrompt": "You are Stage 5 (Report Generation) of the TruthLens pipeline.\n\nTASK:\n- Produce a concise, objective executive summary based strictly on the finalized verification records.\n- NEVER describe user-provided reference sources as \"reliable\", \"authoritative\", \"credible\", or \"trusted\" unless independent verification of source credibility is explicitly provided (it is not).\n- Do not introduce any new claims, facts, or citations, and do not alter established verdicts.\n- Clearly distinguish: (1) whether quotes matched verbatim in the supplied text, (2) whether the text supports/contradicts the claim, and (3) that source credibility itself is unverified.\n- Output valid JSON only.",
+  "userTemplate": "FINALIZED VERIFICATION RECORDS:\n{{FINAL_CLAIMS_JSON}}\n\nReturn JSON:\n{\n  \"summary\": \"concise objective summary grounded strictly in supplied text without asserting source authority\",\n  \"methodologyNote\": \"note on independent verification agreement, any adjudications, evidence gaps, and unverified source credibility\"\n}"
+}

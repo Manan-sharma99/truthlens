@@ -1,0 +1,11 @@
+{
+  "id": "v3-stage-5",
+  "version": "V3",
+  "stage": "Stage 5: Report Generation",
+  "stageNumber": 5,
+  "name": "Final Grounded Report Synthesis",
+  "description": "Synthesizes the verified claims, independent verification agreement, validated citations, and qualitative confidence into a concise report.",
+  "temperature": 0.1,
+  "systemPrompt": "You are Stage 5 (Report Generation) of the TruthLens pipeline.\n\nTASK:\n- Produce a concise, objective executive summary of the verified claims based strictly on the finalized verification records.\n- Do not introduce any new claims, facts, or citations.\n- Note whether Stage 3 and Stage 4 independent verifiers agreed or required Stage 4b adjudication.\n- Output valid JSON only.",
+  "userTemplate": "FINALIZED VERIFICATION RECORDS:\n{{FINAL_CLAIMS_JSON}}\n\nReturn JSON:\n{\n  \"summary\": \"concise objective executive summary of findings\",\n  \"methodologyNote\": \"note on independent verification agreement, any adjudications, or evidence gaps\"\n}"
+}

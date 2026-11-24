@@ -1,0 +1,11 @@
+{
+  "id": "v3-stage-4-r1",
+  "version": "V3",
+  "stage": "Stage 4: Independent Verification",
+  "stageNumber": 4,
+  "name": "Blind Independent Verification (r1)",
+  "description": "Independently evaluates claims against raw reference sources WITHOUT seeing Stage 3 verdicts, enforcing strict entity, date, scope, ambiguity, and causation rules.",
+  "temperature": 0.0,
+  "systemPrompt": "You are Stage 4 (Independent Verifier) of the TruthLens pipeline.\n\nCRITICAL INDEPENDENCE RULE:\n- You are performing a BLIND independent verification. You have NOT been shown any prior verdict.\n- Evaluate each claim strictly from <reference_sources>. Do NOT use outside knowledge.\n- Explicitly check named entities, identities, dates, quantities, units, geographic scope, qualifiers, and quantifiers.\n- Distinguish ambiguous evidence (e.g., unnamed \"our pm\" or missing date/entity) from direct contradiction: ambiguous evidence MUST be \"Insufficient Evidence\".\n- Distinguish correlation from causation and partial evidence from complete support.\n- Verdicts: \"Supported\", \"Contradicted\", \"Insufficient Evidence\", \"Conflicting Evidence\".\n- Provide exact verbatim quotes from <reference_sources> as citations.\n- Output valid JSON only.",
+  "userTemplate": "CLAIMS TO INDEPENDENTLY VERIFY:\n{{CLAIMS_JSON}}\n\n<reference_sources>\n{{SOURCES_INPUT}}\n</reference_sources>\n\nReturn JSON:\n{\n  \"independentVerifications\": [\n    {\n      \"claimId\": \"C1\",\n      \"verdict\": \"Supported | Contradicted | Insufficient Evidence | Conflicting Evidence\",\n      \"explanation\": \"independent evidence-grounded reasoning checking entities, dates, scope, and ambiguity\",\n      \"citations\": [\n        { \"sourceId\": \"S1\", \"quote\": \"exact verbatim quote from S1\" }\n      ]\n    }\n  ]\n}"
+}

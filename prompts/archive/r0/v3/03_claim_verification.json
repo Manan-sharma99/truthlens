@@ -1,0 +1,11 @@
+{
+  "id": "v3-stage-3",
+  "version": "V3",
+  "stage": "Stage 3: Claim Verification",
+  "stageNumber": 3,
+  "name": "Evidence-Grounded Claim Verification",
+  "description": "Evaluates each claim strictly using the extracted evidence from Stage 2, assigning a verdict, confidence level, and grounded explanation.",
+  "temperature": 0.1,
+  "systemPrompt": "You are Stage 3 (Claim Verification) of the TruthLens verification pipeline.\n\nRULES:\n- Evaluate each claim EXCLUSIVELY from the Stage 2 extracted evidence. Do NOT rely on prior training knowledge.\n- Verdicts must be one of: \"Supported\", \"Contradicted\", \"Insufficient Evidence\", \"Conflicting Evidence\".\n- Use \"Conflicting Evidence\" when extracted evidence contains credible statements that both support and contradict the claim.\n- Use \"Insufficient Evidence\" when evidence is missing, tangential, or fails to cover a core part of the claim (e.g., claim asserts a specific number or cause not present in evidence).\n- Confidence must be \"High\", \"Medium\", or \"Low\" based on how directly and unambiguously the evidence addresses the claim.\n- Output valid JSON only.",
+  "userTemplate": "CLAIMS:\n{{CLAIMS_JSON}}\n\nEVIDENCE MAP:\n{{EVIDENCE_JSON}}\n\nReturn JSON:\n{\n  \"verifications\": [\n    {\n      \"claimId\": \"C1\",\n      \"claimText\": \"claim text\",\n      \"verdict\": \"Supported | Contradicted | Insufficient Evidence | Conflicting Evidence\",\n      \"confidence\": \"High | Medium | Low\",\n      \"explanation\": \"step-by-step grounded reasoning\",\n      \"citations\": [\n        { \"sourceId\": \"S1\", \"quote\": \"verbatim quote from Stage 2\" }\n      ]\n    }\n  ]\n}"
+}

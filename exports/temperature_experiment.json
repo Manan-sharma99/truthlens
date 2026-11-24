@@ -1,0 +1,363 @@
+[
+  {
+    "evalId": "f3838987-ce1e-4107-866d-3ad40e2780b5",
+    "version": "V3 r2",
+    "split": "development",
+    "stage4Temperature": 0,
+    "partial": false,
+    "totalCases": 6,
+    "verdictAccuracyOnExpected": 1,
+    "citationValidityRate": 1,
+    "totalExtractedClaims": 8,
+    "agreedClaims": 5,
+    "disagreedClaims": 3,
+    "stage4bActivations": 2,
+    "stage4bRescues": 3,
+    "duplicateClaimFailures": 0,
+    "avgLatencyMs": 9222,
+    "totalTokens": 30632,
+    "perCase": [
+      {
+        "caseId": "atomic-01",
+        "passed": true,
+        "matchedClaims": 1,
+        "expectedClaimsCount": 1,
+        "extractedClaimsCount": 1,
+        "duplicateOrUnexpectedClaims": 0,
+        "stage4bTriggered": true,
+        "observedIssue": "None",
+        "latencyMs": 10203,
+        "tokens": 5476,
+        "claims": [
+          {
+            "claimId": "C1",
+            "claimText": "City transit ridership fell by 15% in Q3 2025.",
+            "stage3Verdict": "Insufficient Evidence",
+            "stage4Verdict": "Contradicted",
+            "finalVerdict": "Contradicted",
+            "agreement": "disagreed_reconciled",
+            "confidence": "Medium"
+          }
+        ]
+      },
+      {
+        "caseId": "atomic-02",
+        "passed": true,
+        "matchedClaims": 1,
+        "expectedClaimsCount": 1,
+        "extractedClaimsCount": 1,
+        "duplicateOrUnexpectedClaims": 0,
+        "stage4bTriggered": false,
+        "observedIssue": "None",
+        "latencyMs": 8199,
+        "tokens": 4169,
+        "claims": [
+          {
+            "claimId": "C1",
+            "claimText": "NovaGrid Energy announced plans to build three nuclear plants in Ohio in 2025.",
+            "stage3Verdict": "Insufficient Evidence",
+            "stage4Verdict": "Insufficient Evidence",
+            "finalVerdict": "Insufficient Evidence",
+            "agreement": "agreed",
+            "confidence": "Medium"
+          }
+        ]
+      },
+      {
+        "caseId": "atomic-03",
+        "passed": true,
+        "matchedClaims": 1,
+        "expectedClaimsCount": 1,
+        "extractedClaimsCount": 1,
+        "duplicateOrUnexpectedClaims": 0,
+        "stage4bTriggered": false,
+        "observedIssue": "None",
+        "latencyMs": 7477,
+        "tokens": 4130,
+        "claims": [
+          {
+            "claimId": "C1",
+            "claimText": "Water boils at 50 degrees Celsius at sea level.",
+            "stage3Verdict": "Contradicted",
+            "stage4Verdict": "Contradicted",
+            "finalVerdict": "Contradicted",
+            "agreement": "agreed",
+            "confidence": "High"
+          }
+        ]
+      },
+      {
+        "caseId": "e2e-01",
+        "passed": true,
+        "matchedClaims": 2,
+        "expectedClaimsCount": 2,
+        "extractedClaimsCount": 2,
+        "duplicateOrUnexpectedClaims": 0,
+        "stage4bTriggered": false,
+        "observedIssue": "None",
+        "latencyMs": 7726,
+        "tokens": 5149,
+        "claims": [
+          {
+            "claimId": "C1",
+            "claimText": "NovaGrid Energy's revenue rose 40% to $2.8 billion in 2025",
+            "stage3Verdict": "Supported",
+            "stage4Verdict": "Supported",
+            "finalVerdict": "Supported",
+            "agreement": "agreed",
+            "confidence": "High"
+          },
+          {
+            "claimId": "C2",
+            "claimText": "NovaGrid Energy announced plans to build three nuclear plants in Ohio",
+            "stage3Verdict": "Insufficient Evidence",
+            "stage4Verdict": "Insufficient Evidence",
+            "finalVerdict": "Insufficient Evidence",
+            "agreement": "agreed",
+            "confidence": "Medium"
+          }
+        ]
+      },
+      {
+        "caseId": "e2e-02",
+        "passed": true,
+        "matchedClaims": 2,
+        "expectedClaimsCount": 2,
+        "extractedClaimsCount": 2,
+        "duplicateOrUnexpectedClaims": 0,
+        "stage4bTriggered": true,
+        "observedIssue": "None",
+        "latencyMs": 13081,
+        "tokens": 7389,
+        "claims": [
+          {
+            "claimId": "C1",
+            "claimText": "The Phase 2 trial of Compound Z reduced recovery time by 50%.",
+            "stage3Verdict": "Insufficient Evidence",
+            "stage4Verdict": "Conflicting Evidence",
+            "finalVerdict": "Conflicting Evidence",
+            "agreement": "disagreed_reconciled",
+            "confidence": "Medium"
+          },
+          {
+            "claimId": "C2",
+            "claimText": "The Phase 2 trial of Compound Z had no serious adverse events.",
+            "stage3Verdict": "Insufficient Evidence",
+            "stage4Verdict": "Conflicting Evidence",
+            "finalVerdict": "Conflicting Evidence",
+            "agreement": "disagreed_reconciled",
+            "confidence": "Medium"
+          }
+        ]
+      },
+      {
+        "caseId": "dev-06",
+        "passed": true,
+        "matchedClaims": 1,
+        "expectedClaimsCount": 1,
+        "extractedClaimsCount": 1,
+        "duplicateOrUnexpectedClaims": 0,
+        "stage4bTriggered": false,
+        "observedIssue": "None",
+        "latencyMs": 8645,
+        "tokens": 4319,
+        "claims": [
+          {
+            "claimId": "C1",
+            "claimText": "Narendar Modi has died.",
+            "stage3Verdict": "Insufficient Evidence",
+            "stage4Verdict": "Insufficient Evidence",
+            "finalVerdict": "Insufficient Evidence",
+            "agreement": "agreed",
+            "confidence": "Medium"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "evalId": "af3a0b45-8f45-4d34-a385-c5db2d22d778",
+    "version": "V3 r2",
+    "split": "development",
+    "stage4Temperature": 0.3,
+    "partial": false,
+    "totalCases": 6,
+    "verdictAccuracyOnExpected": 1,
+    "citationValidityRate": 1,
+    "totalExtractedClaims": 9,
+    "agreedClaims": 6,
+    "disagreedClaims": 3,
+    "stage4bActivations": 2,
+    "stage4bRescues": 3,
+    "duplicateClaimFailures": 1,
+    "avgLatencyMs": 19332,
+    "totalTokens": 31767,
+    "perCase": [
+      {
+        "caseId": "atomic-01",
+        "passed": true,
+        "matchedClaims": 1,
+        "expectedClaimsCount": 1,
+        "extractedClaimsCount": 1,
+        "duplicateOrUnexpectedClaims": 0,
+        "stage4bTriggered": true,
+        "observedIssue": "None",
+        "latencyMs": 25964,
+        "tokens": 5535,
+        "claims": [
+          {
+            "claimId": "C1",
+            "claimText": "City transit ridership fell by 15% in Q3 2025.",
+            "stage3Verdict": "Insufficient Evidence",
+            "stage4Verdict": "Contradicted",
+            "finalVerdict": "Contradicted",
+            "agreement": "disagreed_reconciled",
+            "confidence": "Medium"
+          }
+        ]
+      },
+      {
+        "caseId": "atomic-02",
+        "passed": false,
+        "matchedClaims": 1,
+        "expectedClaimsCount": 1,
+        "extractedClaimsCount": 2,
+        "duplicateOrUnexpectedClaims": 1,
+        "stage4bTriggered": false,
+        "observedIssue": "Duplicate Claim (C2): NovaGrid Energy plans to build three nuclear plants in 2025.",
+        "latencyMs": 20177,
+        "tokens": 5024,
+        "claims": [
+          {
+            "claimId": "C1",
+            "claimText": "NovaGrid Energy announced plans to build three nuclear plants in Ohio.",
+            "stage3Verdict": "Insufficient Evidence",
+            "stage4Verdict": "Insufficient Evidence",
+            "finalVerdict": "Insufficient Evidence",
+            "agreement": "agreed",
+            "confidence": "Medium"
+          },
+          {
+            "claimId": "C2",
+            "claimText": "NovaGrid Energy plans to build three nuclear plants in 2025.",
+            "stage3Verdict": "Insufficient Evidence",
+            "stage4Verdict": "Insufficient Evidence",
+            "finalVerdict": "Insufficient Evidence",
+            "agreement": "agreed",
+            "confidence": "Medium"
+          }
+        ]
+      },
+      {
+        "caseId": "atomic-03",
+        "passed": true,
+        "matchedClaims": 1,
+        "expectedClaimsCount": 1,
+        "extractedClaimsCount": 1,
+        "duplicateOrUnexpectedClaims": 0,
+        "stage4bTriggered": false,
+        "observedIssue": "None",
+        "latencyMs": 7475,
+        "tokens": 4211,
+        "claims": [
+          {
+            "claimId": "C1",
+            "claimText": "Water boils at 50 degrees Celsius at sea level.",
+            "stage3Verdict": "Contradicted",
+            "stage4Verdict": "Contradicted",
+            "finalVerdict": "Contradicted",
+            "agreement": "agreed",
+            "confidence": "High"
+          }
+        ]
+      },
+      {
+        "caseId": "e2e-01",
+        "passed": true,
+        "matchedClaims": 2,
+        "expectedClaimsCount": 2,
+        "extractedClaimsCount": 2,
+        "duplicateOrUnexpectedClaims": 0,
+        "stage4bTriggered": false,
+        "observedIssue": "None",
+        "latencyMs": 16820,
+        "tokens": 5154,
+        "claims": [
+          {
+            "claimId": "C1",
+            "claimText": "NovaGrid Energy's revenue rose 40% to $2.8 billion in 2025.",
+            "stage3Verdict": "Supported",
+            "stage4Verdict": "Supported",
+            "finalVerdict": "Supported",
+            "agreement": "agreed",
+            "confidence": "High"
+          },
+          {
+            "claimId": "C2",
+            "claimText": "NovaGrid Energy announced plans to build three nuclear plants in Ohio.",
+            "stage3Verdict": "Insufficient Evidence",
+            "stage4Verdict": "Insufficient Evidence",
+            "finalVerdict": "Insufficient Evidence",
+            "agreement": "agreed",
+            "confidence": "Medium"
+          }
+        ]
+      },
+      {
+        "caseId": "e2e-02",
+        "passed": true,
+        "matchedClaims": 2,
+        "expectedClaimsCount": 2,
+        "extractedClaimsCount": 2,
+        "duplicateOrUnexpectedClaims": 0,
+        "stage4bTriggered": true,
+        "observedIssue": "None",
+        "latencyMs": 29608,
+        "tokens": 7507,
+        "claims": [
+          {
+            "claimId": "C1",
+            "claimText": "The Phase 2 trial of Compound Z reduced recovery time by 50%",
+            "stage3Verdict": "Insufficient Evidence",
+            "stage4Verdict": "Conflicting Evidence",
+            "finalVerdict": "Conflicting Evidence",
+            "agreement": "disagreed_reconciled",
+            "confidence": "Medium"
+          },
+          {
+            "claimId": "C2",
+            "claimText": "The Phase 2 trial of Compound Z had no serious adverse events.",
+            "stage3Verdict": "Insufficient Evidence",
+            "stage4Verdict": "Conflicting Evidence",
+            "finalVerdict": "Conflicting Evidence",
+            "agreement": "disagreed_reconciled",
+            "confidence": "Medium"
+          }
+        ]
+      },
+      {
+        "caseId": "dev-06",
+        "passed": true,
+        "matchedClaims": 1,
+        "expectedClaimsCount": 1,
+        "extractedClaimsCount": 1,
+        "duplicateOrUnexpectedClaims": 0,
+        "stage4bTriggered": false,
+        "observedIssue": "None",
+        "latencyMs": 15949,
+        "tokens": 4336,
+        "claims": [
+          {
+            "claimId": "C1",
+            "claimText": "Narendar Modi died",
+            "stage3Verdict": "Insufficient Evidence",
+            "stage4Verdict": "Insufficient Evidence",
+            "finalVerdict": "Insufficient Evidence",
+            "agreement": "agreed",
+            "confidence": "Medium"
+          }
+        ]
+      }
+    ]
+  }
+]

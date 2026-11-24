@@ -1,0 +1,19 @@
+Eval ID,Revision,Split,Status,Cases,Overall Acc,Atomic Acc,Atomic Cases,E2E Acc,E2E Cases,Citation Validity,Overconfidence,Avg Latency (ms),Tokens,Failures
+3a5d9881-829c-4c9f-965d-50bc8dbc746a,"V3 (r2, Stage4 temp=0)",held_out,INCOMPLETE,2,100.0%,100.0%,1,100.0%,1,100.0%,0.0%,8441,9480,0
+f7d19380-b3bd-4809-8922-89affe0ed8f5,V2 (r2),held_out,COMPLETE,7,100.0%,100.0%,5,100.0%,2,100.0%,0.0%,1953,13102,0
+af3a0b45-8f45-4d34-a385-c5db2d22d778,"V3 (r2, Stage4 temp=0.3)",development,COMPLETE,6,100.0%,100.0%,4,100.0%,2,100.0%,0.0%,19332,31767,1
+f3838987-ce1e-4107-866d-3ad40e2780b5,"V3 (r2, Stage4 temp=0)",development,COMPLETE,6,100.0%,100.0%,4,100.0%,2,100.0%,0.0%,9222,30632,0
+2182760a-324c-401c-b7ba-e9f76ea472d0,"V3 (r2, Stage4 temp=0)",all,COMPLETE,2,100.0%,100.0%,1,100.0%,1,100.0%,0.0%,10109,11747,0
+c707e9ed-2038-427c-b81c-17ed03d81081,V2 (r2),all,COMPLETE,2,100.0%,100.0%,1,100.0%,1,100.0%,0.0%,2284,3866,0
+68bbc323-fa4d-45a8-9e44-5af90f96b1ff,V1 (r0 baseline),held_out,COMPLETE,7,87.5%,80.0%,5,100.0%,2,100.0%,0.0%,2167,3283,1
+b7fe5e16-3315-4800-8e56-52ffb69aa6dc,V2 (r1),held_out,COMPLETE,7,100.0%,100.0%,5,100.0%,2,100.0%,0.0%,3169,8804,0
+1a3d4592-b1a8-4775-8446-235d97772f37,V1 (r0 baseline),held_out,INCOMPLETE,2,100.0%,100.0%,1,100.0%,1,100.0%,0.0%,3640,997,0
+c4173efb-6aec-4eb5-a13e-675d4036546d,V3 (r1),development,INCOMPLETE,1,100.0%,100.0%,1,0.0%,0,100.0%,0.0%,7185,2907,0
+898f7296-9158-4845-9ff4-773181a50f3e,V2 (r1),development,COMPLETE,6,87.5%,100.0%,4,75.0%,2,100.0%,0.0%,5101,7696,1
+e3ba4e4b-63ec-4390-b4db-4f86353f68b7,V2 (r1),development,INCOMPLETE,3,100.0%,100.0%,3,0.0%,0,100.0%,0.0%,1595,3701,0
+a797af15-1036-495b-853d-e462cd18b694,V1 (r0 baseline),development,COMPLETE,6,87.5%,75.0%,4,100.0%,2,100.0%,0.0%,6152,2886,1
+43cf5244-a9df-42e8-98db-39dc82334679,V1 (r0 baseline),all,INCOMPLETE,2,100.0%,100.0%,2,0.0%,0,100.0%,0.0%,1452,922,0
+15bbca0b-777f-40c3-9d03-82147a6f4567,V2 (r0),all,COMPLETE,5,100.0%,100.0%,3,100.0%,2,100.0%,0.0%,3594,,0
+6ec0e76e-fedc-4474-bd91-aec862420e57,V3 (r0),all,COMPLETE,5,100.0%,100.0%,3,100.0%,2,100.0%,0.0%,15039,,0
+0e4492ee-fe80-4450-9b78-34466caf7a41,V1 (r0 baseline),all,COMPLETE,5,100.0%,100.0%,3,100.0%,2,100.0%,0.0%,5218,,0
+d11f79bf-7eef-4da3-a8a2-be7486d1659e,V1 (r0 baseline),all,COMPLETE,5,100.0%,100.0%,3,100.0%,2,100.0%,0.0%,3879,,0

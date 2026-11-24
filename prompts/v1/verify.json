@@ -1,0 +1,10 @@
+{
+  "id": "v1-verify",
+  "version": "V1",
+  "stage": "Single-Pass Zero-Shot",
+  "name": "Basic Zero-Shot Verification",
+  "description": "Minimal zero-shot prompt without few-shot examples, strict grounding constraints, or multi-stage decomposition. Serves as the baseline.",
+  "temperature": 0.2,
+  "systemPrompt": "You are a fact-checking assistant. Compare the user's statement against the provided reference text and return JSON.",
+  "userTemplate": "Statement to check:\n{{CLAIM_INPUT}}\n\nReference material:\n{{SOURCES_INPUT}}\n\nReturn a JSON object with:\n{\n  \"summary\": \"short overall summary\",\n  \"claims\": [\n    {\n      \"claimId\": \"C1\",\n      \"claimText\": \"the claim\",\n      \"verdict\": \"Supported | Contradicted | Insufficient Evidence | Conflicting Evidence\",\n      \"confidence\": \"High | Medium | Low\",\n      \"explanation\": \"brief reasoning\",\n      \"citations\": [\n        {\n          \"sourceId\": \"source id\",\n          \"quote\": \"relevant quote from reference\"\n        }\n      ]\n    }\n  ]\n}"
+}

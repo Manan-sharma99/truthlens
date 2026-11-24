@@ -1,0 +1,20 @@
+[
+  {
+    "id": "app-01",
+    "category": "Empty claim input",
+    "endpoint": "/api/verify",
+    "description": "Submitting an empty or whitespace-only claim must return HTTP 400 without calling the LLM."
+  },
+  {
+    "id": "app-02",
+    "category": "Empty reference material",
+    "endpoint": "/api/verify",
+    "description": "Submitting a claim with zero non-empty reference sources must return HTTP 400 without calling the LLM."
+  },
+  {
+    "id": "app-03",
+    "category": "Invalid or corrupted files",
+    "endpoint": "/api/parse-source",
+    "description": "Uploading an empty TXT, malformed/corrupted PDF, or unsupported file extension must return HTTP 400/500 with a clear error."
+  }
+]
