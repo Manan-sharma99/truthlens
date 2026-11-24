@@ -62,15 +62,34 @@ function stripJsonFences(text: string): string {
   return trimmed;
 }
 
-function parseRetryDelayMs(errMsg: string): number {
-  const match = errMsg.match(/retry in\s+([\d.]+)s/i);
-  if (match) {
-    const sec = Number.parseFloat(match[1]);
+function parseRetryInfo(errMsg: string): {
+  waitMs: number;
+  isDailyQuota: boolean;
+} {
+  const isDailyQuota =
+    errMsg.includes("PerDay") ||
+    /retry in\s+\d+[hm]/i.test(errMsg);
+  const secMatch = errMsg.match(/retry in\s+([\d.]+)s/i);
+  if (secMatch) {
+    const sec = Number.parseFloat(secMatch[1]);
     if (Number.isFinite(sec) && sec > 0) {
-      return Math.min(Math.ceil(sec * 1000) + 1000, 65000);
+      return {
+        waitMs: Math.min(Math.ceil(sec * 1000) + 1000, 65000),
+        isDailyQuota,
+      };
     }
   }
-  return 16000;
+  const jsonDelayMatch = errMsg.match(/"retryDelay"\s*:\s*"(\d+)s"/i);
+  if (jsonDelayMatch) {
+    const sec = Number.parseInt(jsonDelayMatch[1], 10);
+    if (Number.isFinite(sec) && sec > 0) {
+      return {
+        waitMs: sec * 1000 + 1000,
+        isDailyQuota: isDailyQuota || sec > 120,
+      };
+    }
+  }
+  return { waitMs: 16000, isDailyQuota };
 }
 
 function isTransientApiError(err: unknown): {
@@ -183,23 +202,29 @@ export async function callStructuredJson<T>(
         isTransientApiError(err);
       if (transient) {
         const errMsg = err instanceof Error ? err.message : String(err);
-        const rawWaitMs = isRateLimit ? parseRetryDelayMs(errMsg) : 4000;
+        const retryInfo = isRateLimit
+          ? parseRetryInfo(errMsg)
+          : { waitMs: 4000, isDailyQuota: false };
+        const rawWaitMs = retryInfo.waitMs;
         const retrySec = Math.ceil(rawWaitMs / 1000);
         const remainingMs =
           deadlineMs !== undefined ? deadlineMs - Date.now() : Infinity;
 
-        // In serverless production, fail fast with structured JSON rather than sleeping into a platform 504 timeout
+        // In serverless production, fail fast on 429 so we do not double-consume 5 RPM quota
+        // or sleep into a Vercel 504 timeout (the browser client retries with Retry-After).
         const canRetryWithinBudget =
+          !retryInfo.isDailyQuota &&
+          !(readOnlyProd && isRateLimit) &&
           attempt < maxRetries &&
           remainingMs > rawWaitMs + 10_000 &&
-          (!readOnlyProd || rawWaitMs <= 18_000);
+          (!readOnlyProd || rawWaitMs <= 10_000);
 
         if (!canRetryWithinBudget) {
           if (isRateLimit) {
-            throw new RateLimitError(
-              `Gemini API rate limit (429 RESOURCE_EXHAUSTED) reached. Please retry in ~${retrySec}s.`,
-              retrySec
-            );
+            const msg = retryInfo.isDailyQuota
+              ? "Gemini API daily free-tier quota is exhausted. Please try again after quota reset or use a higher-quota key."
+              : `Gemini API rate limit (429 RESOURCE_EXHAUSTED) reached. Please retry in ~${retrySec}s.`;
+            throw new RateLimitError(msg, retryInfo.isDailyQuota ? undefined : retrySec);
           }
           if (isUnavailable) {
             throw new ServiceUnavailableError(

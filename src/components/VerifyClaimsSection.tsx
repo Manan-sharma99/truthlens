@@ -197,36 +197,37 @@ export function VerifyClaimsSection({
     payload: unknown,
     stepLabel: string
   ): Promise<T> {
-    setProgressLabel(stepLabel);
-    try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      return await readApiJson<T>(res);
-    } catch (err) {
-      if (
-        err instanceof ApiRequestError &&
-        err.status === 429 &&
-        err.retryAfterSec !== undefined &&
-        err.retryAfterSec > 0 &&
-        err.retryAfterSec <= 25
-      ) {
-        setProgressLabel(
-          `Rate limit reached during ${stepLabel} — waiting ${err.retryAfterSec}s before retry...`
-        );
-        await sleep(err.retryAfterSec * 1000);
-        setProgressLabel(`${stepLabel} (retrying)...`);
-        const retryRes = await fetch(url, {
+    const maxClientRetries = 2;
+    for (let attempt = 0; attempt <= maxClientRetries; attempt++) {
+      setProgressLabel(
+        attempt === 0 ? stepLabel : `${stepLabel} (retry ${attempt}/${maxClientRetries})...`
+      );
+      try {
+        const res = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-        return await readApiJson<T>(retryRes);
+        return await readApiJson<T>(res);
+      } catch (err) {
+        if (
+          attempt < maxClientRetries &&
+          err instanceof ApiRequestError &&
+          err.status === 429 &&
+          err.retryAfterSec !== undefined &&
+          err.retryAfterSec > 0 &&
+          err.retryAfterSec <= 30
+        ) {
+          setProgressLabel(
+            `Gemini rate limit reached during ${stepLabel} — waiting ${err.retryAfterSec}s before retry...`
+          );
+          await sleep(err.retryAfterSec * 1000);
+          continue;
+        }
+        throw err;
       }
-      throw err;
     }
+    throw new Error(`Failed after retries during ${stepLabel}`);
   }
 
   async function runSinglePassRemote(v: "V1" | "V2"): Promise<VerificationRun> {
